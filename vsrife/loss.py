@@ -16,7 +16,7 @@ class EPE(nn.Module):
 
 
 class Ternary(nn.Module):
-    def __init__(self, device):
+    def __init__(self, device, fp16):
         super(Ternary, self).__init__()
         patch_size = 7
         out_channels = patch_size * patch_size
@@ -24,6 +24,8 @@ class Ternary(nn.Module):
             (patch_size, patch_size, 1, out_channels))
         self.w = np.transpose(self.w, (3, 2, 0, 1))
         self.w = torch.tensor(self.w).float().to(device)
+        if fp16:
+            self.w = self.w.half()
 
     def transform(self, img):
         patches = F.conv2d(img, self.w, padding=3, bias=None)
@@ -54,13 +56,15 @@ class Ternary(nn.Module):
 
 
 class SOBEL(nn.Module):
-    def __init__(self, device):
+    def __init__(self, device, fp16):
         super(SOBEL, self).__init__()
         self.kernelX = torch.tensor([
             [1, 0, -1],
             [2, 0, -2],
             [1, 0, -1],
         ]).float()
+        if fp16:
+            self.kernelX = self.kernelX.half()
         self.kernelY = self.kernelX.clone().T
         self.kernelX = self.kernelX.unsqueeze(0).unsqueeze(0).to(device)
         self.kernelY = self.kernelY.unsqueeze(0).unsqueeze(0).to(device)

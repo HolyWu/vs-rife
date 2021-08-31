@@ -1,28 +1,30 @@
 import numpy as np
-import os.path
+import os
 import torch
-from torch.nn import functional as F
 import vapoursynth as vs
+from torch.nn import functional as F
 
 core = vs.core
 
 
-def RIFE(clip: vs.VideoNode, model_ver: float=3.5, scale: float=1.0, device_type: str='cuda', device_index: int=0) -> vs.VideoNode:
+def RIFE(clip: vs.VideoNode, model_ver: float=3.5, scale: float=1.0, device_type: str='cuda', device_index: int=0, fp16: bool=False) -> vs.VideoNode:
     '''
     RIFE: Real-Time Intermediate Flow Estimation for Video Frame Interpolation
-    
+
     In order to avoid artifacts at scene change, you should invoke `misc.SCDetect` on YUV or Gray format of the input beforehand so as to set frame properties.
 
     Parameters:
         clip: Clip to process. Only planar format with float sample type of 32 bit depth is supported.
 
         model_ver: Model version to use. Must be 3.1, 3.5, or 3.8.
-        
+
         scale: Controls the process resolution for optical flow model. Try scale=0.5 for 4K video. Must be 0.25, 0.5, 1.0, 2.0, or 4.0.
-        
+
         device_type: Device type on which the tensor is allocated. Must be 'cuda' or 'cpu'.
-        
+
         device_index: Device ordinal for the device type.
+
+        fp16: fp16 mode for faster and more lightweight inference on cards with Tensor Cores.
     '''
     if not isinstance(clip, vs.VideoNode):
         raise vs.Error('RIFE: this is not a clip')
@@ -48,10 +50,11 @@ def RIFE(clip: vs.VideoNode, model_ver: float=3.5, scale: float=1.0, device_type
         raise vs.Error('RIFE: CUDA is not available')
 
     device = torch.device(device_type, device_index)
-    torch.set_grad_enabled(False)
     if device_type == 'cuda':
         torch.backends.cudnn.enabled = True
         torch.backends.cudnn.benchmark = True
+        if fp16:
+            torch.set_default_tensor_type(torch.cuda.HalfTensor)
 
     if model_ver == 3.1:
         from .model31.RIFE_HDv3 import Model
@@ -62,12 +65,11 @@ def RIFE(clip: vs.VideoNode, model_ver: float=3.5, scale: float=1.0, device_type
     else:
         from .model38.RIFE_HDv3 import Model
         model_dir = 'model38'
-    model = Model(device)
+
+    model = Model(device, fp16)
     model.load_model(os.path.join(os.path.dirname(__file__), model_dir), -1)
     model.eval()
     model.device()
-
-    torch.cuda.empty_cache()
 
     w = clip.width
     h = clip.height
@@ -85,9 +87,14 @@ def RIFE(clip: vs.VideoNode, model_ver: float=3.5, scale: float=1.0, device_type
 
         I0 = F.pad(frame_to_tensor(f[0]).to(device, non_blocking=True), padding)
         I1 = F.pad(frame_to_tensor(f[1]).to(device, non_blocking=True), padding)
+        if fp16:
+            I0 = I0.half()
+            I1 = I1.half()
 
-        middle = model.inference(I0, I1, scale)
-        return tensor_to_frame(middle, f[0], w, h)
+        with torch.no_grad():
+            middle = model.inference(I0, I1, scale)
+
+        return tensor_to_frame(middle[:, :, :h, :w], f[0])
 
     return clip0.std.ModifyFrame(clips=[clip0, clip1], selector=rife)
 
@@ -97,9 +104,9 @@ def frame_to_tensor(f: vs.VideoFrame) -> torch.Tensor:
     return torch.from_numpy(arr).unsqueeze(0)
 
 
-def tensor_to_frame(t: torch.Tensor, f: vs.VideoFrame, w: int, h: int) -> vs.VideoFrame:
+def tensor_to_frame(t: torch.Tensor, f: vs.VideoFrame) -> vs.VideoFrame:
     arr = t.data.squeeze().cpu().numpy()
     fout = f.copy()
     for plane in range(fout.format.num_planes):
-        np.copyto(np.asarray(fout.get_write_array(plane)), arr[plane, :h, :w])
+        np.copyto(np.asarray(fout.get_write_array(plane)), arr[plane, :, :])
     return fout
