@@ -11,14 +11,14 @@ import torch.nn.functional as F
 from vsrife.loss import *
     
 class Model:
-    def __init__(self, device, fp16, local_rank=-1):
+    def __init__(self, device, local_rank=-1):
         self.torch_device = device
         self.flownet = IFNet(device)
         self.device()
         self.optimG = AdamW(self.flownet.parameters(), lr=1e-6, weight_decay=1e-4)
         self.epe = EPE()
         # self.vgg = VGGPerceptualLoss().to(device)
-        self.sobel = SOBEL(device, fp16)
+        self.sobel = SOBEL(device)
         if local_rank != -1:
             self.flownet = DDP(self.flownet, device_ids=[local_rank], output_device=local_rank)
 

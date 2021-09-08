@@ -67,7 +67,7 @@ def RIFE(clip: vs.VideoNode, model_ver: float=3.5, scale: float=1.0, device_type
         from .model38.RIFE_HDv3 import Model
         model_dir = 'model38'
 
-    model = Model(device, fp16)
+    model = Model(device)
     model.load_model(os.path.join(os.path.dirname(__file__), model_dir), -1)
     model.eval()
     model.device()

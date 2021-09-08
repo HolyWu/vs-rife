@@ -112,7 +112,7 @@ class FusionNet(nn.Module):
 
 
 class Model:
-    def __init__(self, device, fp16, local_rank=-1):
+    def __init__(self, device, local_rank=-1):
         self.torch_device = device
         self.flownet = IFNet(device)
         self.contextnet = ContextNet(device)
@@ -125,8 +125,8 @@ class Model:
         self.schedulerG = optim.lr_scheduler.CyclicLR(
             self.optimG, base_lr=1e-6, max_lr=1e-3, step_size_up=8000, cycle_momentum=False)
         self.epe = EPE()
-        self.ter = Ternary(device, fp16)
-        self.sobel = SOBEL(device, fp16)
+        self.ter = Ternary(device)
+        self.sobel = SOBEL(device)
         if local_rank != -1:
             self.flownet = DDP(self.flownet, device_ids=[
                                local_rank], output_device=local_rank)
