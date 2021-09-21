@@ -71,19 +71,19 @@ class ContextNet(nn.Module):
     def forward(self, x, flow):
         x = self.conv0(x)
         x = self.conv1(x)
-        flow = F.interpolate(flow, scale_factor=0.5, mode="bilinear", align_corners=False) * 0.5
+        flow = F.interpolate(flow, scale_factor=0.5, mode="bilinear", align_corners=False, recompute_scale_factor=False) * 0.5
         f1 = warp(x, flow, self.device)
         x = self.conv2(x)
         flow = F.interpolate(flow, scale_factor=0.5, mode="bilinear",
-                             align_corners=False) * 0.5
+                             align_corners=False, recompute_scale_factor=False) * 0.5
         f2 = warp(x, flow, self.device)
         x = self.conv3(x)
         flow = F.interpolate(flow, scale_factor=0.5, mode="bilinear",
-                             align_corners=False) * 0.5
+                             align_corners=False, recompute_scale_factor=False) * 0.5
         f3 = warp(x, flow, self.device)
         x = self.conv4(x)
         flow = F.interpolate(flow, scale_factor=0.5, mode="bilinear",
-                             align_corners=False) * 0.5
+                             align_corners=False, recompute_scale_factor=False) * 0.5
         f4 = warp(x, flow, self.device)
         return [f1, f2, f3, f4]
 
@@ -194,7 +194,7 @@ class Model:
         c0 = self.contextnet(img0, flow)
         c1 = self.contextnet(img1, -flow)
         flow = F.interpolate(flow, scale_factor=2.0, mode="bilinear",
-                             align_corners=False) * 2.0
+                             align_corners=False, recompute_scale_factor=False) * 2.0
         refine_output, warped_img0, warped_img1, warped_img0_gt, warped_img1_gt = self.fusionnet(
             img0, img1, flow, c0, c1, flow_gt)
         res = torch.sigmoid(refine_output[:, :3]) * 2 - 1
@@ -229,9 +229,9 @@ class Model:
                 loss_mask = torch.abs(
                     merged_img - gt).sum(1, True).float().detach()
                 loss_mask = F.interpolate(loss_mask, scale_factor=0.5, mode="bilinear",
-                                          align_corners=False).detach()
+                                          align_corners=False, recompute_scale_factor=False).detach()
                 flow_gt = (F.interpolate(flow_gt, scale_factor=0.5, mode="bilinear",
-                                         align_corners=False) * 0.5).detach()
+                                         align_corners=False, recompute_scale_factor=False) * 0.5).detach()
             loss_cons = 0
             for i in range(3):
                 loss_cons += self.epe(flow_list[i], flow_gt[:, :2], 1)
