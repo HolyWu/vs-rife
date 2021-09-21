@@ -1,7 +1,5 @@
 # RIFE
-RIFE: Real-Time Intermediate Flow Estimation for Video Frame Interpolation
-
-Ported from https://github.com/hzwer/arXiv2020-RIFE
+RIFE function for VapourSynth, based on https://github.com/hzwer/arXiv2020-RIFE.
 
 
 ## Dependencies
@@ -11,7 +9,10 @@ Ported from https://github.com/hzwer/arXiv2020-RIFE
 
 
 ## Installation
-`pip install --upgrade vsrife`
+```
+pip install --upgrade vsrife
+python -m vsrife
+```
 
 
 ## Usage
