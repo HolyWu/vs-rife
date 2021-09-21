@@ -88,6 +88,7 @@ def RIFE(clip: vs.VideoNode, model_ver: float=3.5, scale: float=1.0, device_type
     clip0 = core.std.Interleave([clip, clip])
     clip1 = clip0.std.DuplicateFrames(frames=clip0.num_frames - 1).std.DeleteFrames(frames=0)
 
+    @torch.inference_mode()
     def rife(n: int, f: vs.VideoFrame) -> vs.VideoFrame:
         if not (n & 1) or n == clip0.num_frames - 1 or f[0].props.get('_SceneChangeNext'):
             return f[0]
@@ -98,8 +99,7 @@ def RIFE(clip: vs.VideoNode, model_ver: float=3.5, scale: float=1.0, device_type
             I0 = I0.half()
             I1 = I1.half()
 
-        with torch.no_grad():
-            middle = model.inference(I0, I1, scale)
+        middle = model.inference(I0, I1, scale)
 
         return tensor_to_frame(middle[:, :, :h, :w], f[0])
 
