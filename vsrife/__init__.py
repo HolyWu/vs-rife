@@ -17,7 +17,7 @@ def RIFE(clip: vs.VideoNode, model_ver: float=3.5, scale: float=1.0, device_type
     Parameters:
         clip: Clip to process. Only planar format with float sample type of 32 bit depth is supported.
 
-        model_ver: Model version to use. Must be 3.1, 3.5, or 3.8.
+        model_ver: Model version to use. Must be 1.8, 2.3, 2.4, 3.1, 3.5, or 3.8.
 
         scale: Controls the process resolution for optical flow model. Try scale=0.5 for 4K video. Must be 0.25, 0.5, 1.0, 2.0, or 4.0.
 
@@ -36,8 +36,8 @@ def RIFE(clip: vs.VideoNode, model_ver: float=3.5, scale: float=1.0, device_type
     if clip.num_frames < 2:
         raise vs.Error('RIFE: number of frames must be at least 2')
 
-    if model_ver not in [3.1, 3.5, 3.8]:
-        raise vs.Error('RIFE: model_ver must be 3.1, 3.5, or 3.8')
+    if model_ver not in [1.8, 2.3, 2.4, 3.1, 3.5, 3.8]:
+        raise vs.Error('RIFE: model_ver must be 1.8, 2.3, 2.4, 3.1, 3.5, or 3.8')
 
     if scale not in [0.25, 0.5, 1.0, 2.0, 4.0]:
         raise vs.Error('RIFE: scale must be 0.25, 0.5, 1.0, 2.0, or 4.0')
@@ -57,7 +57,13 @@ def RIFE(clip: vs.VideoNode, model_ver: float=3.5, scale: float=1.0, device_type
         if fp16:
             torch.set_default_tensor_type(torch.cuda.HalfTensor)
 
-    if model_ver == 3.1:
+    if model_ver == 1.8:
+        from .RIFE_HD import Model
+        model_dir = 'model18'
+    elif model_ver in [2.3, 2.4]:
+        from .RIFE_HDv2 import Model
+        model_dir = 'model23' if model_ver == 2.3 else 'model24'
+    elif model_ver == 3.1:
         from .model31.RIFE_HDv3 import Model
         model_dir = 'model31'
     elif model_ver == 3.5:

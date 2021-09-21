@@ -5,7 +5,7 @@ import torch.optim as optim
 import itertools
 from vsrife.warplayer import warp
 from torch.nn.parallel import DistributedDataParallel as DDP
-from .IFNet_HDv3 import *
+from .IFNet_HDv2 import *
 import torch.nn.functional as F
 from vsrife.loss import *
 
@@ -120,7 +120,7 @@ class Model:
         self.optimG = AdamW(itertools.chain(
             self.flownet.parameters(),
             self.contextnet.parameters(),
-            self.fusionnet.parameters()), lr=1e-6, weight_decay=1e-5)
+            self.fusionnet.parameters()), lr=1e-6, weight_decay=1e-4)
         self.schedulerG = optim.lr_scheduler.CyclicLR(
             self.optimG, base_lr=1e-6, max_lr=1e-3, step_size_up=8000, cycle_momentum=False)
         self.epe = EPE()
@@ -194,10 +194,8 @@ class Model:
 
     def inference(self, img0, img1, scale=1.0):
         imgs = torch.cat((img0, img1), 1)
-        scale_list = [4, 2, 1]
-        flow, _ = self.flownet(imgs, scale_list, scale=scale)
-        res = self.predict(imgs, flow, training=False)
-        return res
+        flow, _ = self.flownet(imgs, scale)
+        return self.predict(imgs, flow, training=False)
 
     def update(self, imgs, gt, learning_rate=0, mul=1, training=True, flow_gt=None):
         for param_group in self.optimG.param_groups:
