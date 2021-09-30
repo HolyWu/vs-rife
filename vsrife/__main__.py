@@ -1,6 +1,8 @@
 import os
+
 import requests
 from tqdm import tqdm
+
 
 def download_model(url: str) -> None:
     file_name = os.path.join(*url.split('/')[-2:])
@@ -11,6 +13,7 @@ def download_model(url: str) -> None:
             for chunk in response.iter_content(chunk_size=4096):
                 f.write(chunk)
                 pbar.update(len(chunk))
+
 
 if __name__ == '__main__':
     download_model('https://github.com/HolyWu/vs-rife/releases/download/model18/contextnet.pkl')

@@ -1,5 +1,6 @@
-import numpy as np
 import os
+
+import numpy as np
 import torch
 import vapoursynth as vs
 from torch.nn import functional as F
@@ -8,7 +9,7 @@ core = vs.core
 vs_api_below4 = vs.__api_version__.api_major < 4
 
 
-def RIFE(clip: vs.VideoNode, model_ver: float=3.5, scale: float=1.0, device_type: str='cuda', device_index: int=0, fp16: bool=False) -> vs.VideoNode:
+def RIFE(clip: vs.VideoNode, model_ver: float = 3.5, scale: float = 1.0, device_type: str = 'cuda', device_index: int = 0, fp16: bool = False) -> vs.VideoNode:
     '''
     RIFE: Real-Time Intermediate Flow Estimation for Video Frame Interpolation
 
