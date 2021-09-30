@@ -51,6 +51,9 @@ def RIFE(clip: vs.VideoNode, model_ver: float = 3.5, scale: float = 1.0, device_
     if device_type == 'cuda' and not torch.cuda.is_available():
         raise vs.Error('RIFE: CUDA is not available')
 
+    if os.path.getsize(os.path.join(os.path.dirname(__file__), 'model38', 'flownet.pkl')) == 0:
+        raise vs.Error("RIFE: model files have not been downloaded. run 'python -m vsrife' first")
+
     device = torch.device(device_type, device_index)
     if device_type == 'cuda':
         torch.backends.cudnn.enabled = True
