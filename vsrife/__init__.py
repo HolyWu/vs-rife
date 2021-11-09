@@ -6,7 +6,6 @@ import vapoursynth as vs
 from torch.nn import functional as F
 
 core = vs.core
-vs_api_below4 = vs.__api_version__.api_major < 4
 
 
 def RIFE(clip: vs.VideoNode, model_ver: float = 3.5, scale: float = 1.0, device_type: str = 'cuda', device_index: int = 0, fp16: bool = False) -> vs.VideoNode:
@@ -111,7 +110,7 @@ def RIFE(clip: vs.VideoNode, model_ver: float = 3.5, scale: float = 1.0, device_
 
 
 def frame_to_tensor(f: vs.VideoFrame) -> torch.Tensor:
-    arr = np.stack([np.asarray(f.get_read_array(plane) if vs_api_below4 else f[plane]) for plane in range(f.format.num_planes)])
+    arr = np.stack([np.asarray(f[plane]) for plane in range(f.format.num_planes)])
     return torch.from_numpy(arr).unsqueeze(0)
 
 
@@ -119,5 +118,5 @@ def tensor_to_frame(t: torch.Tensor, f: vs.VideoFrame) -> vs.VideoFrame:
     arr = t.squeeze(0).detach().cpu().numpy()
     fout = f.copy()
     for plane in range(fout.format.num_planes):
-        np.copyto(np.asarray(fout.get_write_array(plane) if vs_api_below4 else fout[plane]), arr[plane, :, :])
+        np.copyto(np.asarray(fout[plane]), arr[plane, :, :])
     return fout
