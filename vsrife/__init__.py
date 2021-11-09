@@ -5,17 +5,15 @@ import torch
 import vapoursynth as vs
 from torch.nn import functional as F
 
-core = vs.core
-
 
 def RIFE(clip: vs.VideoNode, model_ver: float = 3.5, scale: float = 1.0, device_type: str = 'cuda', device_index: int = 0, fp16: bool = False) -> vs.VideoNode:
     '''
     RIFE: Real-Time Intermediate Flow Estimation for Video Frame Interpolation
 
-    In order to avoid artifacts at scene change, you should invoke `misc.SCDetect` on YUV or Gray format of the input beforehand so as to set frame properties.
+    In order to avoid artifacts at scene changes, you should invoke `misc.SCDetect` on YUV or Gray format of the input beforehand so as to set frame properties.
 
     Parameters:
-        clip: Clip to process. Only planar format with float sample type of 32 bit depth is supported.
+        clip: Clip to process. Only RGB format with float sample type of 32 bit depth is supported.
 
         model_ver: Model version to use. Must be 1.8, 2.3, 2.4, 3.1, 3.5, or 3.8.
 
@@ -34,7 +32,7 @@ def RIFE(clip: vs.VideoNode, model_ver: float = 3.5, scale: float = 1.0, device_
         raise vs.Error('RIFE: only RGBS format is supported')
 
     if clip.num_frames < 2:
-        raise vs.Error('RIFE: number of frames must be at least 2')
+        raise vs.Error("RIFE: clip's number of frames must be at least 2")
 
     if model_ver not in [1.8, 2.3, 2.4, 3.1, 3.5, 3.8]:
         raise vs.Error('RIFE: model_ver must be 1.8, 2.3, 2.4, 3.1, 3.5, or 3.8')
@@ -88,7 +86,7 @@ def RIFE(clip: vs.VideoNode, model_ver: float = 3.5, scale: float = 1.0, device_
     ph = ((h - 1) // tmp + 1) * tmp
     padding = (0, pw - w, 0, ph - h)
 
-    clip0 = core.std.Interleave([clip, clip])
+    clip0 = vs.core.std.Interleave([clip, clip])
     clip1 = clip0.std.DuplicateFrames(frames=clip0.num_frames - 1).std.DeleteFrames(frames=0)
 
     @torch.inference_mode()
@@ -104,7 +102,7 @@ def RIFE(clip: vs.VideoNode, model_ver: float = 3.5, scale: float = 1.0, device_
 
         middle = model.inference(I0, I1, scale)
 
-        return tensor_to_frame(middle[:, :, :h, :w], f[0])
+        return tensor_to_frame(middle[:, :, :h, :w], f[0].copy())
 
     return clip0.std.ModifyFrame(clips=[clip0, clip1], selector=rife)
 
@@ -116,7 +114,6 @@ def frame_to_tensor(f: vs.VideoFrame) -> torch.Tensor:
 
 def tensor_to_frame(t: torch.Tensor, f: vs.VideoFrame) -> vs.VideoFrame:
     arr = t.squeeze(0).detach().cpu().numpy()
-    fout = f.copy()
-    for plane in range(fout.format.num_planes):
-        np.copyto(np.asarray(fout[plane]), arr[plane, :, :])
-    return fout
+    for plane in range(f.format.num_planes):
+        np.copyto(np.asarray(f[plane]), arr[plane, :, :])
+    return f

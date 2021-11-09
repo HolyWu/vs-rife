@@ -5,11 +5,11 @@ from tqdm import tqdm
 
 
 def download_model(url: str) -> None:
-    file_name = os.path.join(*url.split('/')[-2:])
-    file_path = os.path.join(os.path.dirname(__file__), file_name)
+    filename = os.path.join(*url.split('/')[-2:])
+    filepath = os.path.join(os.path.dirname(__file__), filename)
     response = requests.get(url, stream=True)
-    with open(file_path, 'wb') as f:
-        with tqdm(unit='B', unit_scale=True, unit_divisor=1024, miniters=1, desc=file_name, total=int(response.headers.get('content-length', 0))) as pbar:
+    with open(filepath, 'wb') as f:
+        with tqdm(unit='B', unit_scale=True, unit_divisor=1024, miniters=1, desc=filename, total=int(response.headers.get('content-length', 0))) as pbar:
             for chunk in response.iter_content(chunk_size=4096):
                 f.write(chunk)
                 pbar.update(len(chunk))
