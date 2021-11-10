@@ -60,18 +60,23 @@ def RIFE(clip: vs.VideoNode, model_ver: float = 3.5, scale: float = 1.0, device_
 
     if model_ver == 1.8:
         from .RIFE_HD import Model
+
         model_dir = 'model18'
     elif model_ver in [2.3, 2.4]:
         from .RIFE_HDv2 import Model
+
         model_dir = 'model23' if model_ver == 2.3 else 'model24'
     elif model_ver == 3.1:
         from .model31.RIFE_HDv3 import Model
+
         model_dir = 'model31'
     elif model_ver == 3.5:
         from .model35.RIFE_HDv3 import Model
+
         model_dir = 'model35'
     else:
         from .model38.RIFE_HDv3 import Model
+
         model_dir = 'model38'
 
     model = Model(device)
