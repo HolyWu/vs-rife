@@ -1,5 +1,5 @@
 # RIFE
-RIFE function for VapourSynth, based on https://github.com/hzwer/arXiv2020-RIFE.
+RIFE function for VapourSynth, based on https://github.com/hzwer/Practical-RIFE.
 
 
 ## Dependencies
