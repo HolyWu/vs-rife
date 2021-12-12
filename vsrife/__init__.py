@@ -5,8 +5,10 @@ import torch
 import vapoursynth as vs
 from torch.nn import functional as F
 
+from .RIFE_HDv3 import Model
 
-def RIFE(clip: vs.VideoNode, model_ver: float = 3.5, scale: float = 1.0, device_type: str = 'cuda', device_index: int = 0, fp16: bool = False) -> vs.VideoNode:
+
+def RIFE(clip: vs.VideoNode, multi: int = 2, scale: float = 1.0, device_type: str = 'cuda', device_index: int = 0, fp16: bool = False) -> vs.VideoNode:
     '''
     RIFE: Real-Time Intermediate Flow Estimation for Video Frame Interpolation
 
@@ -15,7 +17,7 @@ def RIFE(clip: vs.VideoNode, model_ver: float = 3.5, scale: float = 1.0, device_
     Parameters:
         clip: Clip to process. Only RGB format with float sample type of 32 bit depth is supported.
 
-        model_ver: Model version to use. Must be 1.8, 2.3, 2.4, 3.1, 3.5, or 3.8.
+        multi: Multiple of the frame counts.
 
         scale: Controls the process resolution for optical flow model. Try scale=0.5 for 4K video. Must be 0.25, 0.5, 1.0, 2.0, or 4.0.
 
@@ -34,8 +36,11 @@ def RIFE(clip: vs.VideoNode, model_ver: float = 3.5, scale: float = 1.0, device_
     if clip.num_frames < 2:
         raise vs.Error("RIFE: clip's number of frames must be at least 2")
 
-    if model_ver not in [1.8, 2.3, 2.4, 3.1, 3.5, 3.8]:
-        raise vs.Error('RIFE: model_ver must be 1.8, 2.3, 2.4, 3.1, 3.5, or 3.8')
+    if not isinstance(multi, int):
+        raise vs.Error('RIFE: multi must be integer')
+
+    if multi < 2:
+        raise vs.Error("RIFE: multi must be at least 2")
 
     if scale not in [0.25, 0.5, 1.0, 2.0, 4.0]:
         raise vs.Error('RIFE: scale must be 0.25, 0.5, 1.0, 2.0, or 4.0')
@@ -48,9 +53,6 @@ def RIFE(clip: vs.VideoNode, model_ver: float = 3.5, scale: float = 1.0, device_
     if device_type == 'cuda' and not torch.cuda.is_available():
         raise vs.Error('RIFE: CUDA is not available')
 
-    if os.path.getsize(os.path.join(os.path.dirname(__file__), 'model38', 'flownet.pkl')) == 0:
-        raise vs.Error("RIFE: model files have not been downloaded. run 'python -m vsrife' first")
-
     device = torch.device(device_type, device_index)
     if device_type == 'cuda':
         torch.backends.cudnn.enabled = True
@@ -58,45 +60,20 @@ def RIFE(clip: vs.VideoNode, model_ver: float = 3.5, scale: float = 1.0, device_
         if fp16:
             torch.set_default_tensor_type(torch.cuda.HalfTensor)
 
-    if model_ver == 1.8:
-        from .RIFE_HD import Model
-
-        model_dir = 'model18'
-    elif model_ver in [2.3, 2.4]:
-        from .RIFE_HDv2 import Model
-
-        model_dir = 'model23' if model_ver == 2.3 else 'model24'
-    elif model_ver == 3.1:
-        from .model31.RIFE_HDv3 import Model
-
-        model_dir = 'model31'
-    elif model_ver == 3.5:
-        from .model35.RIFE_HDv3 import Model
-
-        model_dir = 'model35'
-    else:
-        from .model38.RIFE_HDv3 import Model
-
-        model_dir = 'model38'
-
     model = Model(device)
-    model.load_model(os.path.join(os.path.dirname(__file__), model_dir), -1)
+    model.load_model(os.path.dirname(__file__), -1)
     model.eval()
-    model.device()
 
     w = clip.width
     h = clip.height
-    tmp = max(32, int(32 / scale))
+    tmp = max(128, int(128 / scale))
     pw = ((w - 1) // tmp + 1) * tmp
     ph = ((h - 1) // tmp + 1) * tmp
     padding = (0, pw - w, 0, ph - h)
 
-    clip0 = vs.core.std.Interleave([clip, clip])
-    clip1 = clip0.std.DuplicateFrames(frames=clip0.num_frames - 1).std.DeleteFrames(frames=0)
-
     @torch.inference_mode()
     def rife(n: int, f: vs.VideoFrame) -> vs.VideoFrame:
-        if not (n & 1) or n == clip0.num_frames - 1 or f[0].props.get('_SceneChangeNext'):
+        if (n % multi == 0) or (n // multi == clip.num_frames - 1) or f[0].props.get('_SceneChangeNext'):
             return f[0]
 
         I0 = F.pad(frame_to_tensor(f[0]).to(device, non_blocking=True), padding)
@@ -105,10 +82,12 @@ def RIFE(clip: vs.VideoNode, model_ver: float = 3.5, scale: float = 1.0, device_
             I0 = I0.half()
             I1 = I1.half()
 
-        middle = model.inference(I0, I1, scale)
+        output = model.inference(I0, I1, (n % multi) / multi, scale)
+        return tensor_to_frame(output[:, :, :h, :w], f[0].copy())
 
-        return tensor_to_frame(middle[:, :, :h, :w], f[0].copy())
-
+    clip0 = vs.core.std.Interleave([clip] * multi)
+    clip1 = clip.std.DuplicateFrames(frames=clip.num_frames - 1).std.DeleteFrames(frames=0)
+    clip1 = vs.core.std.Interleave([clip1] * multi)
     return clip0.std.ModifyFrame(clips=[clip0, clip1], selector=rife)
 
 
