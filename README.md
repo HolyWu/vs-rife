@@ -11,7 +11,6 @@ RIFE function for VapourSynth, based on https://github.com/hzwer/Practical-RIFE.
 ## Installation
 ```
 pip install --upgrade vsrife
-python -m vsrife
 ```
 
 
