@@ -98,7 +98,7 @@ def RIFE(clip: vs.VideoNode, multi: int = 2, multi_den: int = 1, scale: float = 
     clip1 = clip.std.DuplicateFrames(frames=clip.num_frames - 1).std.DeleteFrames(frames=0)
     clip1 = vs.core.std.Interleave([clip1] * multi)
     clip2 = clip0.std.ModifyFrame(clips=[clip0, clip1], selector=rife)
-    return vs.core.std.SelectEvery(clip2, cycle = multi_den, offset = 0)
+    return vs.core.std.SelectEvery(clip2, cycle = multi_den, offsets = 0)
 
 
 def frame_to_tensor(f: vs.VideoFrame) -> torch.Tensor:
