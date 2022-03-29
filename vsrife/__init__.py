@@ -72,7 +72,6 @@ def RIFE(clip: vs.VideoNode, multi: int = 2, multi_den: int = 1, scale: float = 
     model.load_model(os.path.dirname(__file__), -1)
     model.eval()
 
-    multi = multi * multi_den
     w = clip.width
     h = clip.height
     tmp = max(128, int(128 / scale))
@@ -97,7 +96,7 @@ def RIFE(clip: vs.VideoNode, multi: int = 2, multi_den: int = 1, scale: float = 
     clip0 = vs.core.std.Interleave([clip] * multi)
     clip1 = clip.std.DuplicateFrames(frames=clip.num_frames - 1).std.DeleteFrames(frames=0)
     clip1 = vs.core.std.Interleave([clip1] * multi)
-    return clip0.std.ModifyFrame(clips=[clip0, clip1], selector=rife).std.SelectEvery(cycle = multi_den, offsets = 0, modify_duration = False)
+    return clip0.std.ModifyFrame(clips=[clip0, clip1], selector=rife).std.SelectEvery(cycle = multi_den, offsets = 0)
 
 
 def frame_to_tensor(f: vs.VideoFrame) -> torch.Tensor:
