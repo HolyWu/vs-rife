@@ -8,7 +8,7 @@ from torch.nn import functional as F
 from .RIFE_HDv3 import Model
 
 
-def RIFE(clip: vs.VideoNode, multi: int = 2, scale: float = 1.0, device_type: str = 'cuda', device_index: int = 0, fp16: bool = False) -> vs.VideoNode:
+def RIFE(clip: vs.VideoNode, multi: int = 2, multi_den: int = 1, scale: float = 1.0, device_type: str = 'cuda', device_index: int = 0, fp16: bool = False) -> vs.VideoNode:
     '''
     RIFE: Real-Time Intermediate Flow Estimation for Video Frame Interpolation
 
@@ -17,7 +17,9 @@ def RIFE(clip: vs.VideoNode, multi: int = 2, scale: float = 1.0, device_type: st
     Parameters:
         clip: Clip to process. Only RGB format with float sample type of 32 bit depth is supported.
 
-        multi: Multiple of the frame counts.
+        multi: Framerate multiplier numerator.
+
+        multi_den: Framerate multiplier denominator.
 
         scale: Controls the process resolution for optical flow model. Try scale=0.5 for 4K video. Must be 0.25, 0.5, 1.0, 2.0, or 4.0.
 
@@ -39,8 +41,14 @@ def RIFE(clip: vs.VideoNode, multi: int = 2, scale: float = 1.0, device_type: st
     if not isinstance(multi, int):
         raise vs.Error('RIFE: multi must be integer')
 
+    if not isinstance(multi_den, int):
+        raise vs.Error('RIFE: multi_den must be integer')
+
     if multi < 2:
         raise vs.Error("RIFE: multi must be at least 2")
+
+    if multi_den < 1:
+        raise vs.Error("RIFE: multi_den must be at least 1")
 
     if scale not in [0.25, 0.5, 1.0, 2.0, 4.0]:
         raise vs.Error('RIFE: scale must be 0.25, 0.5, 1.0, 2.0, or 4.0')
@@ -73,7 +81,7 @@ def RIFE(clip: vs.VideoNode, multi: int = 2, scale: float = 1.0, device_type: st
 
     @torch.inference_mode()
     def rife(n: int, f: vs.VideoFrame) -> vs.VideoFrame:
-        if (n % multi == 0) or (n // multi == clip.num_frames - 1) or f[0].props.get('_SceneChangeNext'):
+        if (n % multi_den != 0) or (n % multi == 0) or (n // multi == clip.num_frames - 1) or f[0].props.get('_SceneChangeNext'):
             return f[0]
 
         I0 = F.pad(frame_to_tensor(f[0]).to(device, non_blocking=True), padding)
@@ -88,7 +96,11 @@ def RIFE(clip: vs.VideoNode, multi: int = 2, scale: float = 1.0, device_type: st
     clip0 = vs.core.std.Interleave([clip] * multi)
     clip1 = clip.std.DuplicateFrames(frames=clip.num_frames - 1).std.DeleteFrames(frames=0)
     clip1 = vs.core.std.Interleave([clip1] * multi)
-    return clip0.std.ModifyFrame(clips=[clip0, clip1], selector=rife)
+    clip2 = clip0.std.ModifyFrame(clips=[clip0, clip1], selector=rife)
+    if multi_den == 1:
+        return clip2
+    else:
+        return clip2.std.SelectEvery(cycle = multi_den, offsets = 0)
 
 
 def frame_to_tensor(f: vs.VideoFrame) -> torch.Tensor:
