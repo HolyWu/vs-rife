@@ -66,7 +66,7 @@ def RIFE(
 
     device = torch.device(device_type, device_index)
     if device_type == 'cuda':
-        torch.backends.cudnn.enabled = True
+        torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.benchmark = True
         if fp16:
             torch.set_default_tensor_type(torch.cuda.HalfTensor)
