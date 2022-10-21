@@ -8,25 +8,24 @@ from torch.nn import functional as F
 from .RIFE_HDv3 import Model
 
 
-def RIFE(clip: vs.VideoNode, multi: int = 2, scale: float = 1.0, device_type: str = 'cuda', device_index: int = 0, fp16: bool = False) -> vs.VideoNode:
-    '''
-    RIFE: Real-Time Intermediate Flow Estimation for Video Frame Interpolation
+def RIFE(
+    clip: vs.VideoNode,
+    device_type: str = 'cuda',
+    device_index: int = 0,
+    fp16: bool = False,
+    multi: int = 2,
+    scale: float = 1.0,
+) -> vs.VideoNode:
+    """Real-Time Intermediate Flow Estimation for Video Frame Interpolation
 
-    In order to avoid artifacts at scene changes, you should invoke `misc.SCDetect` on YUV or Gray format of the input beforehand so as to set frame properties.
-
-    Parameters:
-        clip: Clip to process. Only RGB format with float sample type of 32 bit depth is supported.
-
-        multi: Multiple of the frame counts.
-
-        scale: Controls the process resolution for optical flow model. Try scale=0.5 for 4K video. Must be 0.25, 0.5, 1.0, 2.0, or 4.0.
-
-        device_type: Device type on which the tensor is allocated. Must be 'cuda' or 'cpu'.
-
-        device_index: Device ordinal for the device type.
-
-        fp16: fp16 mode for faster and more lightweight inference on cards with Tensor Cores.
-    '''
+    :param clip:            Clip to process. Only RGBS format is supported.
+    :param device_type:     Device type on which the tensor is allocated. Must be 'cuda' or 'cpu'.
+    :param device_index:    Device ordinal for the device type.
+    :param fp16:            Enable FP16 mode.
+    :param multi:           Multiple of the frame counts.
+    :param scale:           Control the process resolution for optical flow model. Try scale=0.5 for 4K video.
+                            Must be 0.25, 0.5, 1.0, 2.0, or 4.0.
+    """
     if not isinstance(clip, vs.VideoNode):
         raise vs.Error('RIFE: this is not a clip')
 
@@ -36,6 +35,14 @@ def RIFE(clip: vs.VideoNode, multi: int = 2, scale: float = 1.0, device_type: st
     if clip.num_frames < 2:
         raise vs.Error("RIFE: clip's number of frames must be at least 2")
 
+    device_type = device_type.lower()
+
+    if device_type not in ['cuda', 'cpu']:
+        raise vs.Error("RIFE: device_type must be 'cuda' or 'cpu'")
+
+    if device_type == 'cuda' and not torch.cuda.is_available():
+        raise vs.Error('RIFE: CUDA is not available')
+
     if not isinstance(multi, int):
         raise vs.Error('RIFE: multi must be integer')
 
@@ -44,14 +51,6 @@ def RIFE(clip: vs.VideoNode, multi: int = 2, scale: float = 1.0, device_type: st
 
     if scale not in [0.25, 0.5, 1.0, 2.0, 4.0]:
         raise vs.Error('RIFE: scale must be 0.25, 0.5, 1.0, 2.0, or 4.0')
-
-    device_type = device_type.lower()
-
-    if device_type not in ['cuda', 'cpu']:
-        raise vs.Error("RIFE: device_type must be 'cuda' or 'cpu'")
-
-    if device_type == 'cuda' and not torch.cuda.is_available():
-        raise vs.Error('RIFE: CUDA is not available')
 
     device = torch.device(device_type, device_index)
     if device_type == 'cuda':
