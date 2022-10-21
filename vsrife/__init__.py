@@ -93,7 +93,7 @@ def RIFE(
     flownet = IFNet(device, scale, ensemble)
     flownet.load_state_dict(checkpoint, strict=False)
     flownet.eval()
-    flownet.to(device)
+    flownet.to(device, memory_format=torch.channels_last)
 
     w = clip.width
     h = clip.height
@@ -107,8 +107,8 @@ def RIFE(
         if (n % multi == 0) or (n // multi == clip.num_frames - 1) or f[0].props.get('_SceneChangeNext'):
             return f[0]
 
-        img0 = frame_to_tensor(f[0]).to(device)
-        img1 = frame_to_tensor(f[1]).to(device)
+        img0 = frame_to_tensor(f[0]).to(device, memory_format=torch.channels_last)
+        img1 = frame_to_tensor(f[1]).to(device, memory_format=torch.channels_last)
         if fp16:
             img0 = img0.half()
             img1 = img1.half()
@@ -116,7 +116,9 @@ def RIFE(
         img1 = F.pad(img1, padding)
 
         imgs = torch.cat((img0, img1), dim=1)
-        timestep = torch.full((1, 1, imgs.shape[2], imgs.shape[3]), fill_value=(n % multi) / multi, device=device)
+        timestep = torch.full((1, 1, imgs.shape[2], imgs.shape[3]), fill_value=(n % multi) / multi, device=device).to(
+            memory_format=torch.channels_last
+        )
         output = flownet(imgs, timestep)
         return tensor_to_frame(output[:, :, :h, :w], f[0].copy())
 
