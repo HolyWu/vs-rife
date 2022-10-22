@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os.path as osp
+from fractions import Fraction
+from functools import partial
 
 import numpy as np
 import torch
@@ -16,7 +18,10 @@ def RIFE(
     device_index: int = 0,
     fp16: bool = False,
     model: str = '4.6',
-    multi: int = 2,
+    factor_num: int = 2,
+    factor_den: int = 1,
+    fps_num: int | None = None,
+    fps_den: int | None = None,
     scale: float = 1.0,
     ensemble: bool = False,
 ) -> vs.VideoNode:
@@ -27,7 +32,11 @@ def RIFE(
     :param device_index:    Device ordinal for the device type.
     :param fp16:            Enable FP16 mode.
     :param model:           Model version to use. Must be '4.0', '4.1', '4.2', '4.3', '4.4', '4.5', or '4.6'.
-    :param multi:           Multiple of the frame counts.
+    :param factor_num:      Numerator of factor for target frame rate.
+                            For example `factor_num=5, factor_den=2` will multiply the frame rate by 2.5.
+    :param factor_den:      Denominator of factor for target frame rate.
+    :param fps_num:         Numerator of target frame rate. Override `factor_num` and `factor_den` if specified.
+    :param fps_den:         Denominator of target frame rate.
     :param scale:           Control the process resolution for optical flow model. Try scale=0.5 for 4K video.
                             Must be 0.25, 0.5, 1.0, 2.0, or 4.0.
     :param ensemble:        Smooth predictions in areas where the estimation is uncertain.
@@ -52,11 +61,20 @@ def RIFE(
     if model not in ['4.0', '4.1', '4.2', '4.3', '4.4', '4.5', '4.6']:
         raise vs.Error("RIFE: model must be '4.0', '4.1', '4.2', '4.3', '4.4', '4.5', or '4.6'")
 
-    if not isinstance(multi, int):
-        raise vs.Error('RIFE: multi must be integer')
+    if factor_num < 1:
+        raise vs.Error('RIFE: factor_num must be at least 1')
 
-    if multi < 2:
-        raise vs.Error("RIFE: multi must be at least 2")
+    if factor_den < 1:
+        raise vs.Error('RIFE: factor_den must be at least 1')
+
+    if fps_num and fps_num < 1:
+        raise vs.Error('RIFE: fps_num must be at least 1')
+
+    if fps_den and fps_den < 1:
+        raise vs.Error('RIFE: fps_den must be at least 1')
+
+    if fps_num and fps_den and clip.fps == 0:
+        raise vs.Error('RIFE: clip does not have a valid frame rate and hence fps_num and fps_den cannot be used')
 
     if scale not in [0.25, 0.5, 1.0, 2.0, 4.0]:
         raise vs.Error('RIFE: scale must be 0.25, 0.5, 1.0, 2.0, or 4.0')
@@ -95,6 +113,10 @@ def RIFE(
     flownet.eval()
     flownet.to(device, memory_format=torch.channels_last)
 
+    if fps_num and fps_den:
+        factor = Fraction(fps_num, fps_den) / clip.fps
+        factor_num, factor_den = factor.as_integer_ratio()
+
     w = clip.width
     h = clip.height
     tmp = max(128, int(128 / scale))
@@ -102,9 +124,14 @@ def RIFE(
     ph = ((h - 1) // tmp + 1) * tmp
     padding = (0, pw - w, 0, ph - h)
 
+    def frame_adjuster(n: int, clip: vs.VideoNode) -> vs.VideoNode:
+        return clip[n * factor_den // factor_num]
+
     @torch.inference_mode()
-    def rife(n: int, f: list[vs.VideoFrame]) -> vs.VideoFrame:
-        if (n % multi == 0) or (n // multi == clip.num_frames - 1) or f[0].props.get('_SceneChangeNext'):
+    def inference(n: int, f: list[vs.VideoFrame]) -> vs.VideoFrame:
+        remainder = n * factor_den % factor_num
+
+        if remainder == 0 or f[0].props.get('_SceneChangeNext'):
             return f[0]
 
         img0 = frame_to_tensor(f[0]).to(device, memory_format=torch.channels_last)
@@ -116,16 +143,22 @@ def RIFE(
         img1 = F.pad(img1, padding)
 
         imgs = torch.cat((img0, img1), dim=1)
-        timestep = torch.full((1, 1, imgs.shape[2], imgs.shape[3]), fill_value=(n % multi) / multi, device=device).to(
-            memory_format=torch.channels_last
-        )
+        timestep = torch.full(
+            (1, 1, imgs.shape[2], imgs.shape[3]), fill_value=remainder / factor_num, device=device
+        ).to(memory_format=torch.channels_last)
         output = flownet(imgs, timestep)
         return tensor_to_frame(output[:, :, :h, :w], f[0].copy())
 
-    clip0 = vs.core.std.Interleave([clip] * multi)
-    clip1 = clip.std.DuplicateFrames(frames=clip.num_frames - 1).std.DeleteFrames(frames=0)
-    clip1 = vs.core.std.Interleave([clip1] * multi)
-    return clip0.std.ModifyFrame(clips=[clip0, clip1], selector=rife)
+    format_clip = clip.std.BlankClip(
+        length=clip.num_frames * factor_num // factor_den,
+        fpsnum=clip.fps.numerator * factor_num,
+        fpsden=clip.fps.denominator * factor_den,
+    )
+
+    clip0 = format_clip.std.FrameEval(partial(frame_adjuster, clip=clip), clip_src=clip)
+    clip1 = clip.std.DuplicateFrames(frames=clip.num_frames - 1).std.Trim(first=1)
+    clip1 = format_clip.std.FrameEval(partial(frame_adjuster, clip=clip1), clip_src=clip1)
+    return clip0.std.ModifyFrame(clips=[clip0, clip1], selector=inference)
 
 
 def frame_to_tensor(frame: vs.VideoFrame) -> torch.Tensor:
