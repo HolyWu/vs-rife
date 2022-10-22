@@ -24,6 +24,8 @@ def RIFE(
     fps_den: int | None = None,
     scale: float = 1.0,
     ensemble: bool = False,
+    sc: bool = True,
+    sc_threshold: float | None = None,
 ) -> vs.VideoNode:
     """Real-Time Intermediate Flow Estimation for Video Frame Interpolation
 
@@ -40,6 +42,9 @@ def RIFE(
     :param scale:           Control the process resolution for optical flow model. Try scale=0.5 for 4K video.
                             Must be 0.25, 0.5, 1.0, 2.0, or 4.0.
     :param ensemble:        Smooth predictions in areas where the estimation is uncertain.
+    :param sc:              Avoid interpolating frames over scene changes by examining _SceneChangeNext frame property.
+    :param sc_threshold:    Threshold for scene change detection. Must be between 0.0 and 1.0.
+                            Leave it None if the clip already has _SceneChangeNext properly set.
     """
     if not isinstance(clip, vs.VideoNode):
         raise vs.Error('RIFE: this is not a clip')
@@ -124,6 +129,9 @@ def RIFE(
     ph = ((h - 1) // tmp + 1) * tmp
     padding = (0, pw - w, 0, ph - h)
 
+    if sc_threshold:
+        clip = sc_detect(clip, sc_threshold)
+
     def frame_adjuster(n: int, clip: vs.VideoNode) -> vs.VideoNode:
         return clip[n * factor_den // factor_num]
 
@@ -131,7 +139,7 @@ def RIFE(
     def inference(n: int, f: list[vs.VideoFrame]) -> vs.VideoFrame:
         remainder = n * factor_den % factor_num
 
-        if remainder == 0 or f[0].props.get('_SceneChangeNext'):
+        if remainder == 0 or (sc and f[0].props.get('_SceneChangeNext')):
             return f[0]
 
         img0 = frame_to_tensor(f[0]).to(device, memory_format=torch.channels_last)
@@ -159,6 +167,17 @@ def RIFE(
     clip1 = clip.std.DuplicateFrames(frames=clip.num_frames - 1).std.Trim(first=1)
     clip1 = format_clip.std.FrameEval(partial(frame_adjuster, clip=clip1), clip_src=clip1)
     return clip0.std.ModifyFrame(clips=[clip0, clip1], selector=inference)
+
+
+def sc_detect(clip: vs.VideoNode, threshold: float) -> vs.VideoNode:
+    def copy_property(n: int, f: list[vs.VideoFrame]) -> vs.VideoFrame:
+        fout = f[0].copy()
+        fout.props['_SceneChangePrev'] = f[1].props['_SceneChangePrev']
+        fout.props['_SceneChangeNext'] = f[1].props['_SceneChangeNext']
+        return fout
+
+    sc_clip = clip.resize.Bicubic(format=vs.GRAY8, matrix_s='709').misc.SCDetect(threshold)
+    return clip.std.ModifyFrame(clips=[clip, sc_clip], selector=copy_property)
 
 
 def frame_to_tensor(frame: vs.VideoFrame) -> torch.Tensor:
