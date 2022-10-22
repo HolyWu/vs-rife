@@ -166,7 +166,7 @@ def RIFE(
     clip0 = format_clip.std.FrameEval(partial(frame_adjuster, clip=clip), clip_src=clip)
     clip1 = clip.std.DuplicateFrames(frames=clip.num_frames - 1).std.Trim(first=1)
     clip1 = format_clip.std.FrameEval(partial(frame_adjuster, clip=clip1), clip_src=clip1)
-    return clip0.std.ModifyFrame(clips=[clip0, clip1], selector=inference)
+    return clip0.std.FrameEval(lambda n: clip0.std.ModifyFrame([clip0, clip1], inference), clip_src=[clip0, clip1])
 
 
 def sc_detect(clip: vs.VideoNode, threshold: float) -> vs.VideoNode:
@@ -177,7 +177,7 @@ def sc_detect(clip: vs.VideoNode, threshold: float) -> vs.VideoNode:
         return fout
 
     sc_clip = clip.resize.Bicubic(format=vs.GRAY8, matrix_s='709').misc.SCDetect(threshold)
-    return clip.std.ModifyFrame(clips=[clip, sc_clip], selector=copy_property)
+    return clip.std.FrameEval(lambda n: clip.std.ModifyFrame([clip, sc_clip], copy_property), clip_src=[clip, sc_clip])
 
 
 def frame_to_tensor(frame: vs.VideoFrame) -> torch.Tensor:
