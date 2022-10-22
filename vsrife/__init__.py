@@ -17,6 +17,7 @@ def RIFE(
     device_type: str = 'cuda',
     device_index: int = 0,
     fp16: bool = False,
+    cuda_graphs: bool = True,
     model: str = '4.6',
     factor_num: int = 2,
     factor_den: int = 1,
@@ -33,6 +34,8 @@ def RIFE(
     :param device_type:     Device type on which the tensor is allocated. Must be 'cuda' or 'cpu'.
     :param device_index:    Device ordinal for the device type.
     :param fp16:            Enable FP16 mode.
+    :param cuda_graphs:     Use CUDA Graphs to remove CPU overhead associated with launching CUDA kernels sequentially.
+                            Not supported for '4.0' and '4.1' models.
     :param model:           Model version to use. Must be '4.0', '4.1', '4.2', '4.3', '4.4', '4.5', or '4.6'.
     :param factor_num:      Numerator of factor for target frame rate.
                             For example `factor_num=5, factor_den=2` will multiply the frame rate by 2.5.
@@ -91,8 +94,9 @@ def RIFE(
     if device_type == 'cuda':
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.benchmark = True
-        if fp16:
-            torch.set_default_tensor_type(torch.cuda.HalfTensor)
+
+    if fp16:
+        torch.set_default_tensor_type(torch.HalfTensor)
 
     match model:
         case '4.0':
@@ -129,6 +133,22 @@ def RIFE(
     ph = ((h - 1) // tmp + 1) * tmp
     padding = (0, pw - w, 0, ph - h)
 
+    if cuda_graphs:
+        with torch.inference_mode():
+            static_input = torch.empty(1, 6, ph, pw, device=device, memory_format=torch.channels_last)
+            static_timestep = torch.empty(1, 1, ph, pw, device=device, memory_format=torch.channels_last)
+
+            s = torch.cuda.Stream(device=device)
+            s.wait_stream(torch.cuda.current_stream(device=device))
+            with torch.cuda.stream(s):
+                for _ in range(3):
+                    flownet(static_input, static_timestep)
+            torch.cuda.current_stream(device=device).wait_stream(s)
+
+            g = torch.cuda.CUDAGraph()
+            with torch.cuda.graph(g):
+                static_output = flownet(static_input, static_timestep)
+
     if sc_threshold:
         clip = sc_detect(clip, sc_threshold)
 
@@ -154,7 +174,15 @@ def RIFE(
         timestep = torch.full(
             (1, 1, imgs.shape[2], imgs.shape[3]), fill_value=remainder / factor_num, device=device
         ).to(memory_format=torch.channels_last)
-        output = flownet(imgs, timestep)
+
+        if cuda_graphs:
+            static_input.copy_(imgs)
+            static_timestep.copy_(timestep)
+            g.replay()
+            output = static_output
+        else:
+            output = flownet(imgs, timestep)
+
         return tensor_to_frame(output[:, :, :h, :w], f[0].copy())
 
     format_clip = clip.std.BlankClip(
