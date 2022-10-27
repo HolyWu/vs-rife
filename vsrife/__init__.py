@@ -8,6 +8,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import vapoursynth as vs
+from functorch.compile import memory_efficient_fusion
 
 dir_name = osp.dirname(__file__)
 
@@ -17,6 +18,7 @@ def RIFE(
     device_type: str = 'cuda',
     device_index: int = 0,
     fp16: bool = False,
+    fusion: bool = False,
     cuda_graphs: bool = True,
     model: str = '4.6',
     factor_num: int = 2,
@@ -34,6 +36,7 @@ def RIFE(
     :param device_type:     Device type on which the tensor is allocated. Must be 'cuda' or 'cpu'.
     :param device_index:    Device ordinal for the device type.
     :param fp16:            Enable FP16 mode.
+    :param fusion:          Enable fusion through nvFuser on Volta and later GPUs. (experimental)
     :param cuda_graphs:     Use CUDA Graphs to remove CPU overhead associated with launching CUDA kernels sequentially.
                             Not supported for '4.0' and '4.1' models.
     :param model:           Model version to use. Must be '4.0', '4.1', '4.2', '4.3', '4.4', '4.5', or '4.6'.
@@ -121,6 +124,9 @@ def RIFE(
     flownet.load_state_dict(checkpoint, strict=False)
     flownet.eval()
     flownet.to(device, memory_format=torch.channels_last)
+
+    if fusion:
+        flownet = memory_efficient_fusion(flownet)
 
     if fps_num and fps_den:
         factor = Fraction(fps_num, fps_den) / clip.fps
