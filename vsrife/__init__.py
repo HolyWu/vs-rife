@@ -15,7 +15,6 @@ dir_name = osp.dirname(__file__)
 
 def RIFE(
     clip: vs.VideoNode,
-    device_type: str = 'cuda',
     device_index: int = 0,
     fp16: bool = False,
     fusion: bool = False,
@@ -33,7 +32,6 @@ def RIFE(
     """Real-Time Intermediate Flow Estimation for Video Frame Interpolation
 
     :param clip:            Clip to process. Only RGBS format is supported.
-    :param device_type:     Device type on which the tensor is allocated. Must be 'cuda' or 'cpu'.
     :param device_index:    Device ordinal for the device type.
     :param fp16:            Enable FP16 mode.
     :param fusion:          Enable fusion through nvFuser on Volta and later GPUs. (experimental)
@@ -61,12 +59,7 @@ def RIFE(
     if clip.num_frames < 2:
         raise vs.Error("RIFE: clip's number of frames must be at least 2")
 
-    device_type = device_type.lower()
-
-    if device_type not in ['cuda', 'cpu']:
-        raise vs.Error("RIFE: device_type must be 'cuda' or 'cpu'")
-
-    if device_type == 'cuda' and not torch.cuda.is_available():
+    if not torch.cuda.is_available():
         raise vs.Error('RIFE: CUDA is not available')
 
     if model not in ['4.0', '4.1', '4.2', '4.3', '4.4', '4.5', '4.6']:
@@ -93,10 +86,10 @@ def RIFE(
     if osp.getsize(osp.join(dir_name, 'flownet_v4.0.pkl')) == 0:
         raise vs.Error("RIFE: model files have not been downloaded. run 'python -m vsrife' first")
 
-    device = torch.device(device_type, device_index)
-    if device_type == 'cuda':
-        torch.backends.cuda.matmul.allow_tf32 = True
-        torch.backends.cudnn.benchmark = True
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.benchmark = True
+
+    device = torch.device('cuda', device_index)
 
     if fp16:
         torch.set_default_tensor_type(torch.HalfTensor)
