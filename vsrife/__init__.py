@@ -15,7 +15,7 @@ dir_name = osp.dirname(__file__)
 
 def RIFE(
     clip: vs.VideoNode,
-    device_index: int = 0,
+    device_index: int | None = None,
     fp16: bool = False,
     fusion: bool = False,
     cuda_graphs: bool = True,
@@ -32,7 +32,7 @@ def RIFE(
     """Real-Time Intermediate Flow Estimation for Video Frame Interpolation
 
     :param clip:            Clip to process. Only RGBS format is supported.
-    :param device_index:    Device ordinal for the device type.
+    :param device_index:    Device ordinal of the GPU.
     :param fp16:            Enable FP16 mode.
     :param fusion:          Enable fusion through nvFuser on Volta and later GPUs. (experimental)
     :param cuda_graphs:     Use CUDA Graphs to remove CPU overhead associated with launching CUDA kernels sequentially.
