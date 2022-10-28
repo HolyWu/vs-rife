@@ -16,7 +16,7 @@ dir_name = osp.dirname(__file__)
 def RIFE(
     clip: vs.VideoNode,
     device_index: int | None = None,
-    fp16: bool = False,
+    fp16: bool = True,
     fusion: bool = False,
     cuda_graphs: bool = True,
     model: str = '4.6',
