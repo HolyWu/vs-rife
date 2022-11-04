@@ -3,6 +3,7 @@ from __future__ import annotations
 import os.path as osp
 from fractions import Fraction
 from functools import partial
+from threading import Lock
 
 import numpy as np
 import torch
@@ -17,6 +18,7 @@ def RIFE(
     clip: vs.VideoNode,
     device_index: int | None = None,
     fp16: bool = True,
+    num_streams: int = 3,
     fusion: bool = False,
     cuda_graphs: bool = True,
     model: str = '4.6',
@@ -34,6 +36,7 @@ def RIFE(
     :param clip:            Clip to process. Only RGBS format is supported.
     :param device_index:    Device ordinal of the GPU.
     :param fp16:            Enable FP16 mode.
+    :param num_streams:     Number of CUDA streams to enqueue the kernels.
     :param fusion:          Enable fusion through nvFuser on Volta and later GPUs. (experimental)
     :param cuda_graphs:     Use CUDA Graphs to remove CPU overhead associated with launching CUDA kernels sequentially.
                             Not supported for '4.0' and '4.1' models.
@@ -61,6 +64,12 @@ def RIFE(
 
     if not torch.cuda.is_available():
         raise vs.Error('RIFE: CUDA is not available')
+
+    if num_streams < 1:
+        raise vs.Error('RIFE: num_streams must be at least 1')
+
+    if num_streams > vs.core.num_threads:
+        raise vs.Error('RIFE: setting num_streams greater than `core.num_threads` is useless')
 
     if model not in ['4.0', '4.1', '4.2', '4.3', '4.4', '4.5', '4.6']:
         raise vs.Error("RIFE: model must be '4.0', '4.1', '4.2', '4.3', '4.4', '4.5', or '4.6'")
@@ -93,6 +102,12 @@ def RIFE(
 
     if fp16:
         torch.set_default_tensor_type(torch.HalfTensor)
+
+    stream: list[torch.cuda.Stream] = []
+    stream_lock: list[Lock] = []
+    for _ in range(num_streams):
+        stream.append(torch.cuda.Stream(device=device))
+        stream_lock.append(Lock())
 
     match model:
         case '4.0':
@@ -134,22 +149,31 @@ def RIFE(
 
     if cuda_graphs:
         with torch.inference_mode():
-            static_input = torch.empty(1, 6, ph, pw, device=device, memory_format=torch.channels_last)
-            static_timestep = torch.empty(1, 1, ph, pw, device=device, memory_format=torch.channels_last)
+            static_input: list[torch.Tensor] = []
+            static_timestep: list[torch.Tensor] = []
+            static_output: list[torch.Tensor] = []
+            graph: list[torch.cuda.CUDAGraph] = []
 
-            s = torch.cuda.Stream(device=device)
-            s.wait_stream(torch.cuda.current_stream(device=device))
-            with torch.cuda.stream(s):
-                for _ in range(3):
-                    flownet(static_input, static_timestep)
-            torch.cuda.current_stream(device=device).wait_stream(s)
+            for i in range(num_streams):
+                static_input.append(torch.empty(1, 6, ph, pw, device=device, memory_format=torch.channels_last))
+                static_timestep.append(torch.empty(1, 1, ph, pw, device=device, memory_format=torch.channels_last))
 
-            g = torch.cuda.CUDAGraph()
-            with torch.cuda.graph(g):
-                static_output = flownet(static_input, static_timestep)
+                s = torch.cuda.Stream(device=device)
+                s.wait_stream(torch.cuda.current_stream(device=device))
+                with torch.cuda.stream(s):
+                    for _ in range(3):
+                        flownet(static_input[i], static_timestep[i])
+                torch.cuda.current_stream(device=device).wait_stream(s)
+
+                graph.append(torch.cuda.CUDAGraph())
+                with torch.cuda.graph(graph[i]):
+                    static_output.append(flownet(static_input[i], static_timestep[i]))
 
     if sc_threshold:
         clip = sc_detect(clip, sc_threshold)
+
+    index = -1
+    index_lock = Lock()
 
     def frame_adjuster(n: int, clip: vs.VideoNode) -> vs.VideoNode:
         return clip[n * factor_den // factor_num]
@@ -161,28 +185,33 @@ def RIFE(
         if remainder == 0 or (sc and f[0].props.get('_SceneChangeNext')):
             return f[0]
 
-        img0 = frame_to_tensor(f[0]).to(device, memory_format=torch.channels_last)
-        img1 = frame_to_tensor(f[1]).to(device, memory_format=torch.channels_last)
-        if fp16:
-            img0 = img0.half()
-            img1 = img1.half()
-        img0 = F.pad(img0, padding)
-        img1 = F.pad(img1, padding)
+        nonlocal index
+        with index_lock:
+            index = (index + 1) % num_streams
+            local_index = index
 
-        imgs = torch.cat((img0, img1), dim=1)
-        timestep = torch.full(
-            (1, 1, imgs.shape[2], imgs.shape[3]), fill_value=remainder / factor_num, device=device
-        ).to(memory_format=torch.channels_last)
+        with stream_lock[local_index], torch.cuda.stream(stream[local_index]):
+            img0 = frame_to_tensor(f[0]).to(device, memory_format=torch.channels_last)
+            img1 = frame_to_tensor(f[1]).to(device, memory_format=torch.channels_last)
+            if fp16:
+                img0 = img0.half()
+                img1 = img1.half()
+            img0 = F.pad(img0, padding)
+            img1 = F.pad(img1, padding)
 
-        if cuda_graphs:
-            static_input.copy_(imgs)
-            static_timestep.copy_(timestep)
-            g.replay()
-            output = static_output
-        else:
-            output = flownet(imgs, timestep)
+            imgs = torch.cat((img0, img1), dim=1)
+            timestep = torch.full((1, 1, imgs.shape[2], imgs.shape[3]), remainder / factor_num, device=device)
+            timestep = timestep.to(memory_format=torch.channels_last)
 
-        return tensor_to_frame(output[:, :, :h, :w], f[0].copy())
+            if cuda_graphs:
+                static_input[local_index].copy_(imgs)
+                static_timestep[local_index].copy_(timestep)
+                graph[local_index].replay()
+                output = static_output[local_index]
+            else:
+                output = flownet(imgs, timestep)
+
+            return tensor_to_frame(output[:, :, :h, :w], f[0].copy())
 
     format_clip = clip.std.BlankClip(
         length=clip.num_frames * factor_num // factor_den,
