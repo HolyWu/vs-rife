@@ -17,7 +17,6 @@ dir_name = osp.dirname(__file__)
 def RIFE(
     clip: vs.VideoNode,
     device_index: int | None = None,
-    fp16: bool = True,
     num_streams: int = 3,
     fusion: bool = False,
     cuda_graphs: bool = True,
@@ -33,9 +32,8 @@ def RIFE(
 ) -> vs.VideoNode:
     """Real-Time Intermediate Flow Estimation for Video Frame Interpolation
 
-    :param clip:            Clip to process. Only RGBS format is supported.
+    :param clip:            Clip to process. Only RGBH and RGBS formats are supported.
     :param device_index:    Device ordinal of the GPU.
-    :param fp16:            Enable FP16 mode.
     :param num_streams:     Number of CUDA streams to enqueue the kernels.
     :param fusion:          Enable fusion through nvFuser on Volta and later GPUs. (experimental)
     :param cuda_graphs:     Use CUDA Graphs to remove CPU overhead associated with launching CUDA kernels sequentially.
@@ -56,8 +54,8 @@ def RIFE(
     if not isinstance(clip, vs.VideoNode):
         raise vs.Error('RIFE: this is not a clip')
 
-    if clip.format.id != vs.RGBS:
-        raise vs.Error('RIFE: only RGBS format is supported')
+    if clip.format.id not in [vs.RGBH, vs.RGBS]:
+        raise vs.Error('RIFE: only RGBH and RGBS formats are supported')
 
     if clip.num_frames < 2:
         raise vs.Error("RIFE: clip's number of frames must be at least 2")
@@ -95,13 +93,14 @@ def RIFE(
     if osp.getsize(osp.join(dir_name, 'flownet_v4.0.pkl')) == 0:
         raise vs.Error("RIFE: model files have not been downloaded. run 'python -m vsrife' first")
 
+    fp16 = clip.format.bytes_per_sample == 2
+    if fp16:
+        torch.set_default_tensor_type(torch.HalfTensor)
+
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.benchmark = True
 
     device = torch.device('cuda', device_index)
-
-    if fp16:
-        torch.set_default_tensor_type(torch.HalfTensor)
 
     stream: list[torch.cuda.Stream] = []
     stream_lock: list[Lock] = []
@@ -195,9 +194,6 @@ def RIFE(
         with stream_lock[local_index], torch.cuda.stream(stream[local_index]):
             img0 = frame_to_tensor(f[0]).to(device, memory_format=torch.channels_last)
             img1 = frame_to_tensor(f[1]).to(device, memory_format=torch.channels_last)
-            if fp16:
-                img0 = img0.half()
-                img1 = img1.half()
             img0 = F.pad(img0, padding)
             img1 = F.pad(img1, padding)
 
