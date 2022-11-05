@@ -149,25 +149,27 @@ def RIFE(
 
     if cuda_graphs:
         with torch.inference_mode():
-            static_input: list[torch.Tensor] = []
+            static_img0: list[torch.Tensor] = []
+            static_img1: list[torch.Tensor] = []
             static_timestep: list[torch.Tensor] = []
             static_output: list[torch.Tensor] = []
             graph: list[torch.cuda.CUDAGraph] = []
 
             for i in range(num_streams):
-                static_input.append(torch.empty(1, 6, ph, pw, device=device, memory_format=torch.channels_last))
+                static_img0.append(torch.empty(1, 3, ph, pw, device=device, memory_format=torch.channels_last))
+                static_img1.append(torch.empty(1, 3, ph, pw, device=device, memory_format=torch.channels_last))
                 static_timestep.append(torch.empty(1, 1, ph, pw, device=device, memory_format=torch.channels_last))
 
                 s = torch.cuda.Stream(device=device)
                 s.wait_stream(torch.cuda.current_stream(device=device))
                 with torch.cuda.stream(s):
                     for _ in range(3):
-                        flownet(static_input[i], static_timestep[i])
+                        flownet(static_img0[i], static_img1[i], static_timestep[i])
                 torch.cuda.current_stream(device=device).wait_stream(s)
 
                 graph.append(torch.cuda.CUDAGraph())
                 with torch.cuda.graph(graph[i]):
-                    static_output.append(flownet(static_input[i], static_timestep[i]))
+                    static_output.append(flownet(static_img0[i], static_img1[i], static_timestep[i]))
 
     if sc_threshold:
         clip = sc_detect(clip, sc_threshold)
@@ -199,17 +201,17 @@ def RIFE(
             img0 = F.pad(img0, padding)
             img1 = F.pad(img1, padding)
 
-            imgs = torch.cat((img0, img1), dim=1)
-            timestep = torch.full((1, 1, imgs.shape[2], imgs.shape[3]), remainder / factor_num, device=device)
+            timestep = torch.full((1, 1, img0.shape[2], img0.shape[3]), remainder / factor_num, device=device)
             timestep = timestep.to(memory_format=torch.channels_last)
 
             if cuda_graphs:
-                static_input[local_index].copy_(imgs)
+                static_img0[local_index].copy_(img0)
+                static_img1[local_index].copy_(img1)
                 static_timestep[local_index].copy_(timestep)
                 graph[local_index].replay()
                 output = static_output[local_index]
             else:
-                output = flownet(imgs, timestep)
+                output = flownet(img0, img1, timestep)
 
             return tensor_to_frame(output[:, :, :h, :w], f[0].copy())
 

@@ -53,10 +53,7 @@ class IFNet(nn.Module):
         self.scale = scale
         self.ensemble = ensemble
 
-    def forward(self, x, timestep):
-        channel = x.shape[1] // 2
-        img0 = x[:, :channel]
-        img1 = x[:, channel:]
+    def forward(self, img0, img1, timestep):
         scale_list = [8/self.scale, 4/self.scale, 2/self.scale, 1/self.scale]
         flow_list = []
         merged = []
