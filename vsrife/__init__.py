@@ -10,6 +10,8 @@ import torch
 import torch.nn.functional as F
 import vapoursynth as vs
 from functorch.compile import memory_efficient_fusion
+from torch_tensorrt.fx import compile
+from torch_tensorrt.fx.utils import LowerPrecision
 
 dir_name = osp.dirname(__file__)
 
@@ -19,7 +21,10 @@ def RIFE(
     device_index: int | None = None,
     num_streams: int = 3,
     fusion: bool = False,
-    cuda_graphs: bool = True,
+    cuda_graphs: bool = False,
+    trt: bool = False,
+    trt_max_workspace_size: int = 1 << 30,
+    trt_cache_path: str = dir_name,
     model: str = '4.6',
     factor_num: int = 2,
     factor_den: int = 1,
@@ -32,24 +37,30 @@ def RIFE(
 ) -> vs.VideoNode:
     """Real-Time Intermediate Flow Estimation for Video Frame Interpolation
 
-    :param clip:            Clip to process. Only RGBH and RGBS formats are supported.
-    :param device_index:    Device ordinal of the GPU.
-    :param num_streams:     Number of CUDA streams to enqueue the kernels.
-    :param fusion:          Enable fusion through nvFuser on Volta and later GPUs. (experimental)
-    :param cuda_graphs:     Use CUDA Graphs to remove CPU overhead associated with launching CUDA kernels sequentially.
-                            Not supported for '4.0' and '4.1' models.
-    :param model:           Model version to use. Must be '4.0', '4.1', '4.2', '4.3', '4.4', '4.5', or '4.6'.
-    :param factor_num:      Numerator of factor for target frame rate.
-                            For example `factor_num=5, factor_den=2` will multiply the frame rate by 2.5.
-    :param factor_den:      Denominator of factor for target frame rate.
-    :param fps_num:         Numerator of target frame rate. Override `factor_num` and `factor_den` if specified.
-    :param fps_den:         Denominator of target frame rate.
-    :param scale:           Control the process resolution for optical flow model. Try scale=0.5 for 4K video.
-                            Must be 0.25, 0.5, 1.0, 2.0, or 4.0.
-    :param ensemble:        Smooth predictions in areas where the estimation is uncertain.
-    :param sc:              Avoid interpolating frames over scene changes by examining _SceneChangeNext frame property.
-    :param sc_threshold:    Threshold for scene change detection. Must be between 0.0 and 1.0.
-                            Leave it None if the clip already has _SceneChangeNext properly set.
+    :param clip:                    Clip to process. Only RGBH and RGBS formats are supported.
+    :param device_index:            Device ordinal of the GPU.
+    :param num_streams:             Number of CUDA streams to enqueue the kernels.
+    :param fusion:                  Enable fusion through nvFuser. Not compatible with TensorRT. (experimental)
+    :param cuda_graphs:             Use CUDA Graphs to remove CPU overhead associated with launching CUDA kernels sequentially.
+                                    Not useful to TensorRT. Not supported for '4.0' and '4.1' models.
+    :param trt:                     Use TensorRT for high-performance inference.
+                                    Not supported for '4.0' and '4.1' models.
+    :param trt_max_workspace_size:  Maximum workspace size for TensorRT engine.
+    :param trt_cache_path:          Path for TensorRT engine and timing cache files.
+                                    Engine will be cached when it's built for the first time.
+                                    Note each engine is created for specific settings.
+    :param model:                   Model version to use. Must be '4.0', '4.1', '4.2', '4.3', '4.4', '4.5', or '4.6'.
+    :param factor_num:              Numerator of factor for target frame rate.
+                                    For example `factor_num=5, factor_den=2` will multiply the frame rate by 2.5.
+    :param factor_den:              Denominator of factor for target frame rate.
+    :param fps_num:                 Numerator of target frame rate. Override `factor_num` and `factor_den` if specified.
+    :param fps_den:                 Denominator of target frame rate.
+    :param scale:                   Control the process resolution for optical flow model. Try scale=0.5 for 4K video.
+                                    Must be 0.25, 0.5, 1.0, 2.0, or 4.0.
+    :param ensemble:                Smooth predictions in areas where the estimation is uncertain.
+    :param sc:                      Avoid interpolating frames over scene changes by examining _SceneChangeNext frame property.
+    :param sc_threshold:            Threshold for scene change detection. Must be between 0.0 and 1.0.
+                                    Leave it None if the clip already has _SceneChangeNext properly set.
     """
     if not isinstance(clip, vs.VideoNode):
         raise vs.Error('RIFE: this is not a clip')
@@ -102,11 +113,8 @@ def RIFE(
 
     device = torch.device('cuda', device_index)
 
-    stream: list[torch.cuda.Stream] = []
-    stream_lock: list[Lock] = []
-    for _ in range(num_streams):
-        stream.append(torch.cuda.Stream(device=device))
-        stream_lock.append(Lock())
+    stream = [torch.cuda.Stream(device=device) for _ in range(num_streams)]
+    stream_lock = [Lock() for _ in range(num_streams)]
 
     match model:
         case '4.0':
@@ -124,7 +132,7 @@ def RIFE(
         case '4.6':
             from .IFNet_HDv3_v4_6 import IFNet
 
-    checkpoint = torch.load(osp.join(dir_name, f'flownet_v{model}.pkl'), map_location='cpu')
+    checkpoint = torch.load(osp.join(dir_name, f'flownet_v{model}.pkl'), map_location=device)
     checkpoint = {k.replace('module.', ''): v for k, v in checkpoint.items() if 'module.' in k}
 
     flownet = IFNet(device, scale, ensemble)
@@ -146,6 +154,41 @@ def RIFE(
     ph = ((h - 1) // tmp + 1) * tmp
     padding = (0, pw - w, 0, ph - h)
 
+    if trt:
+        import tensorrt
+
+        device_name = torch.cuda.get_device_name(device)
+        trt_version = tensorrt.__version__
+        precision = 'fp16' if fp16 else 'fp32'
+        dimensions = f'{pw}x{ph}'
+        path = osp.join(
+            trt_cache_path,
+            f'flownet_v{model}_{device_name}_trt-{trt_version}_{precision}_{dimensions}_scale-{scale}_ensemble-{ensemble}.pt',
+        )
+
+        if not osp.isfile(path):
+            with torch.inference_mode():
+                flownet = compile(
+                    flownet,
+                    [
+                        torch.empty(1, 3, ph, pw, device=device, memory_format=torch.channels_last),
+                        torch.empty(1, 3, ph, pw, device=device, memory_format=torch.channels_last),
+                        torch.empty(1, 1, ph, pw, device=device, memory_format=torch.channels_last),
+                    ],
+                    max_workspace_size=trt_max_workspace_size,
+                    explicit_batch_dimension=True,
+                    lower_precision=LowerPrecision.FP16 if fp16 else LowerPrecision.FP32,
+                    timing_cache_prefix=osp.join(trt_cache_path, 'trt_timing_cache'),
+                    save_timing_cache=True,
+                    dynamic_batch=False,
+                )
+
+            torch.save(flownet, path)
+            del flownet
+            torch.cuda.empty_cache()
+
+        flownet = [torch.load(path, map_location=device) for _ in range(num_streams)]
+
     if cuda_graphs:
         with torch.inference_mode():
             static_img0: list[torch.Tensor] = []
@@ -163,12 +206,18 @@ def RIFE(
                 s.wait_stream(torch.cuda.current_stream(device=device))
                 with torch.cuda.stream(s):
                     for _ in range(3):
-                        flownet(static_img0[i], static_img1[i], static_timestep[i])
+                        if trt:
+                            flownet[i](static_img0[i], static_img1[i], static_timestep[i])
+                        else:
+                            flownet(static_img0[i], static_img1[i], static_timestep[i])
                 torch.cuda.current_stream(device=device).wait_stream(s)
 
                 graph.append(torch.cuda.CUDAGraph())
                 with torch.cuda.graph(graph[i]):
-                    static_output.append(flownet(static_img0[i], static_img1[i], static_timestep[i]))
+                    if trt:
+                        static_output.append(flownet[i](static_img0[i], static_img1[i], static_timestep[i]))
+                    else:
+                        static_output.append(flownet(static_img0[i], static_img1[i], static_timestep[i]))
 
     if sc_threshold:
         clip = sc_detect(clip, sc_threshold)
@@ -206,6 +255,8 @@ def RIFE(
                 static_timestep[local_index].copy_(timestep)
                 graph[local_index].replay()
                 output = static_output[local_index]
+            elif trt:
+                output = flownet[local_index](img0, img1, timestep)
             else:
                 output = flownet(img0, img1, timestep)
 
