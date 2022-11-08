@@ -89,13 +89,13 @@ def RIFE(
     if factor_den < 1:
         raise vs.Error('RIFE: factor_den must be at least 1')
 
-    if fps_num and fps_num < 1:
+    if fps_num is not None and fps_num < 1:
         raise vs.Error('RIFE: fps_num must be at least 1')
 
-    if fps_den and fps_den < 1:
+    if fps_den is not None and fps_den < 1:
         raise vs.Error('RIFE: fps_den must be at least 1')
 
-    if fps_num and fps_den and clip.fps == 0:
+    if fps_num is not None and fps_den is not None and clip.fps == 0:
         raise vs.Error('RIFE: clip does not have a valid frame rate and hence fps_num and fps_den cannot be used')
 
     if scale not in [0.25, 0.5, 1.0, 2.0, 4.0]:
@@ -143,7 +143,7 @@ def RIFE(
     if fusion:
         flownet = memory_efficient_fusion(flownet)
 
-    if fps_num and fps_den:
+    if fps_num is not None and fps_den is not None:
         factor = Fraction(fps_num, fps_den) / clip.fps
         factor_num, factor_den = factor.as_integer_ratio()
 
@@ -219,7 +219,7 @@ def RIFE(
                     else:
                         static_output.append(flownet(static_img0[i], static_img1[i], static_timestep[i]))
 
-    if sc_threshold:
+    if sc_threshold is not None:
         clip = sc_detect(clip, sc_threshold)
 
     index = -1
