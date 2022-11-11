@@ -49,6 +49,9 @@ def RIFE(
     :param trt_cache_path:          Path for TensorRT engine and timing cache files.
                                     Engine will be cached when it's built for the first time.
                                     Note each engine is created for specific settings.
+                                    It is suggested to reuse cache only in the same hardware/software configurations
+                                    (for example, CUDA/cuDNN/TensorRT versions, device model, and clock frequency);
+                                    otherwise, functional or performance issues may occur.
     :param model:                   Model version to use. Must be '4.0', '4.1', '4.2', '4.3', '4.4', '4.5', or '4.6'.
     :param factor_num:              Numerator of factor for target frame rate.
                                     For example `factor_num=5, factor_den=2` will multiply the frame rate by 2.5.
