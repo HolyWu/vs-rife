@@ -166,7 +166,17 @@ def RIFE(
         dimensions = f'{pw}x{ph}'
         trt_engine_path = osp.join(
             trt_cache_path,
-            f'flownet_v{model}_{device_name}_trt-{trt_version}_{precision}_{dimensions}_scale-{scale}_ensemble-{ensemble}.pt',
+            (
+                f'flownet_v{model}'
+                + f'_{device_name}'
+                + f'_trt-{trt_version}'
+                + f'_workspace-{trt_max_workspace_size}'
+                + f'_{precision}'
+                + f'_{dimensions}'
+                + f'_scale-{scale}'
+                + f'_ensemble-{ensemble}'
+                + '.pt'
+            ),
         )
 
         if not osp.isfile(trt_engine_path):
