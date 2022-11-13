@@ -13,7 +13,7 @@ from functorch.compile import memory_efficient_fusion
 from torch_tensorrt.fx import compile
 from torch_tensorrt.fx.utils import LowerPrecision
 
-dir_name = osp.dirname(__file__)
+package_dir = osp.dirname(osp.realpath(__file__))
 
 
 def RIFE(
@@ -24,7 +24,7 @@ def RIFE(
     cuda_graphs: bool = False,
     trt: bool = False,
     trt_max_workspace_size: int = 1 << 30,
-    trt_cache_path: str = dir_name,
+    trt_cache_path: str = package_dir,
     model: str = '4.6',
     factor_num: int = 2,
     factor_den: int = 1,
@@ -104,7 +104,7 @@ def RIFE(
     if scale not in [0.25, 0.5, 1.0, 2.0, 4.0]:
         raise vs.Error('RIFE: scale must be 0.25, 0.5, 1.0, 2.0, or 4.0')
 
-    if osp.getsize(osp.join(dir_name, 'flownet_v4.0.pkl')) == 0:
+    if osp.getsize(osp.join(package_dir, 'flownet_v4.0.pkl')) == 0:
         raise vs.Error("RIFE: model files have not been downloaded. run 'python -m vsrife' first")
 
     fp16 = clip.format.bytes_per_sample == 2
@@ -135,7 +135,7 @@ def RIFE(
         case '4.6':
             from .IFNet_HDv3_v4_6 import IFNet
 
-    checkpoint = torch.load(osp.join(dir_name, f'flownet_v{model}.pkl'), map_location=device)
+    checkpoint = torch.load(osp.join(package_dir, f'flownet_v{model}.pkl'), map_location=device)
     checkpoint = {k.replace('module.', ''): v for k, v in checkpoint.items() if 'module.' in k}
 
     flownet = IFNet(device, scale, ensemble)
@@ -164,12 +164,12 @@ def RIFE(
         trt_version = tensorrt.__version__
         precision = 'fp16' if fp16 else 'fp32'
         dimensions = f'{pw}x{ph}'
-        path = osp.join(
+        trt_engine_path = osp.join(
             trt_cache_path,
             f'flownet_v{model}_{device_name}_trt-{trt_version}_{precision}_{dimensions}_scale-{scale}_ensemble-{ensemble}.pt',
         )
 
-        if not osp.isfile(path):
+        if not osp.isfile(trt_engine_path):
             with torch.inference_mode():
                 flownet = compile(
                     flownet,
@@ -186,11 +186,11 @@ def RIFE(
                     dynamic_batch=False,
                 )
 
-            torch.save(flownet, path)
+            torch.save(flownet, trt_engine_path)
             del flownet
             torch.cuda.empty_cache()
 
-        flownet = [torch.load(path, map_location=device) for _ in range(num_streams)]
+        flownet = [torch.load(trt_engine_path, map_location=device) for _ in range(num_streams)]
 
     if cuda_graphs:
         with torch.inference_mode():
