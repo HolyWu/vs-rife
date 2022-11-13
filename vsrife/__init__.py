@@ -215,18 +215,18 @@ def RIFE(
                 static_img1.append(torch.empty(1, 3, ph, pw, device=device, memory_format=torch.channels_last))
                 static_timestep.append(torch.empty(1, 1, ph, pw, device=device, memory_format=torch.channels_last))
 
-                s = torch.cuda.Stream(device=device)
-                s.wait_stream(torch.cuda.current_stream(device=device))
-                with torch.cuda.stream(s):
-                    for _ in range(3):
-                        if trt:
-                            flownet[i](static_img0[i], static_img1[i], static_timestep[i])
-                        else:
-                            flownet(static_img0[i], static_img1[i], static_timestep[i])
-                torch.cuda.current_stream(device=device).wait_stream(s)
+                torch.cuda.synchronize(device=device)
+                stream[i].wait_stream(torch.cuda.current_stream(device=device))
+                with torch.cuda.stream(stream[i]):
+                    if trt:
+                        flownet[i](static_img0[i], static_img1[i], static_timestep[i])
+                    else:
+                        flownet(static_img0[i], static_img1[i], static_timestep[i])
+                torch.cuda.current_stream(device=device).wait_stream(stream[i])
+                torch.cuda.synchronize(device=device)
 
                 graph.append(torch.cuda.CUDAGraph())
-                with torch.cuda.graph(graph[i]):
+                with torch.cuda.graph(graph[i], stream=stream[i]):
                     if trt:
                         static_output.append(flownet[i](static_img0[i], static_img1[i], static_timestep[i]))
                     else:
