@@ -40,9 +40,9 @@ def RIFE(
     :param clip:                    Clip to process. Only RGBH and RGBS formats are supported.
     :param device_index:            Device ordinal of the GPU.
     :param num_streams:             Number of CUDA streams to enqueue the kernels.
-    :param fusion:                  Enable fusion through nvFuser. Not compatible with TensorRT. (experimental)
-    :param cuda_graphs:             Use CUDA Graphs to remove CPU overhead associated with launching CUDA kernels sequentially.
-                                    Not useful to TensorRT. Not supported for '4.0' and '4.1' models.
+    :param fusion:                  Enable fusion through nvFuser. Not allowed in TensorRT. (experimental)
+    :param cuda_graphs:             Use CUDA Graphs to remove CPU overhead associated with launching CUDA kernels
+                                    sequentially. Not allowed in TensorRT. Not supported for '4.0' and '4.1' models.
     :param trt:                     Use TensorRT for high-performance inference.
                                     Not supported for '4.0' and '4.1' models.
     :param trt_max_workspace_size:  Maximum workspace size for TensorRT engine.
@@ -61,7 +61,7 @@ def RIFE(
     :param scale:                   Control the process resolution for optical flow model. Try scale=0.5 for 4K video.
                                     Must be 0.25, 0.5, 1.0, 2.0, or 4.0.
     :param ensemble:                Smooth predictions in areas where the estimation is uncertain.
-    :param sc:                      Avoid interpolating frames over scene changes by examining _SceneChangeNext frame property.
+    :param sc:                      Avoid interpolating frames over scene changes.
     :param sc_threshold:            Threshold for scene change detection. Must be between 0.0 and 1.0.
                                     Leave it None if the clip already has _SceneChangeNext properly set.
     """
@@ -82,6 +82,13 @@ def RIFE(
 
     if num_streams > vs.core.num_threads:
         raise vs.Error('RIFE: setting num_streams greater than `core.num_threads` is useless')
+
+    if trt:
+        if fusion:
+            raise vs.Error('RIFE: fusion and trt are mutually exclusive')
+
+        if cuda_graphs:
+            raise vs.Error('RIFE: cuda_graphs and trt are mutually exclusive')
 
     if model not in ['4.0', '4.1', '4.2', '4.3', '4.4', '4.5', '4.6']:
         raise vs.Error("RIFE: model must be '4.0', '4.1', '4.2', '4.3', '4.4', '4.5', or '4.6'")
@@ -146,16 +153,36 @@ def RIFE(
     if fusion:
         flownet = memory_efficient_fusion(flownet)
 
-    if fps_num is not None and fps_den is not None:
-        factor = Fraction(fps_num, fps_den) / clip.fps
-        factor_num, factor_den = factor.as_integer_ratio()
-
     w = clip.width
     h = clip.height
     tmp = max(128, int(128 / scale))
     pw = ((w - 1) // tmp + 1) * tmp
     ph = ((h - 1) // tmp + 1) * tmp
     padding = (0, pw - w, 0, ph - h)
+
+    if cuda_graphs:
+        with torch.inference_mode():
+            static_img0: list[torch.Tensor] = []
+            static_img1: list[torch.Tensor] = []
+            static_timestep: list[torch.Tensor] = []
+            static_output: list[torch.Tensor] = []
+            graph: list[torch.cuda.CUDAGraph] = []
+
+            for i in range(num_streams):
+                static_img0.append(torch.empty(1, 3, ph, pw, device=device, memory_format=torch.channels_last))
+                static_img1.append(torch.empty(1, 3, ph, pw, device=device, memory_format=torch.channels_last))
+                static_timestep.append(torch.empty(1, 1, ph, pw, device=device, memory_format=torch.channels_last))
+
+                torch.cuda.synchronize(device=device)
+                stream[i].wait_stream(torch.cuda.current_stream(device=device))
+                with torch.cuda.stream(stream[i]):
+                    flownet(static_img0[i], static_img1[i], static_timestep[i])
+                torch.cuda.current_stream(device=device).wait_stream(stream[i])
+                torch.cuda.synchronize(device=device)
+
+                graph.append(torch.cuda.CUDAGraph())
+                with torch.cuda.graph(graph[i], stream=stream[i]):
+                    static_output.append(flownet(static_img0[i], static_img1[i], static_timestep[i]))
 
     if trt:
         import tensorrt
@@ -202,35 +229,9 @@ def RIFE(
 
         flownet = [torch.load(trt_engine_path, map_location=device) for _ in range(num_streams)]
 
-    if cuda_graphs:
-        with torch.inference_mode():
-            static_img0: list[torch.Tensor] = []
-            static_img1: list[torch.Tensor] = []
-            static_timestep: list[torch.Tensor] = []
-            static_output: list[torch.Tensor] = []
-            graph: list[torch.cuda.CUDAGraph] = []
-
-            for i in range(num_streams):
-                static_img0.append(torch.empty(1, 3, ph, pw, device=device, memory_format=torch.channels_last))
-                static_img1.append(torch.empty(1, 3, ph, pw, device=device, memory_format=torch.channels_last))
-                static_timestep.append(torch.empty(1, 1, ph, pw, device=device, memory_format=torch.channels_last))
-
-                torch.cuda.synchronize(device=device)
-                stream[i].wait_stream(torch.cuda.current_stream(device=device))
-                with torch.cuda.stream(stream[i]):
-                    if trt:
-                        flownet[i](static_img0[i], static_img1[i], static_timestep[i])
-                    else:
-                        flownet(static_img0[i], static_img1[i], static_timestep[i])
-                torch.cuda.current_stream(device=device).wait_stream(stream[i])
-                torch.cuda.synchronize(device=device)
-
-                graph.append(torch.cuda.CUDAGraph())
-                with torch.cuda.graph(graph[i], stream=stream[i]):
-                    if trt:
-                        static_output.append(flownet[i](static_img0[i], static_img1[i], static_timestep[i]))
-                    else:
-                        static_output.append(flownet(static_img0[i], static_img1[i], static_timestep[i]))
+    if fps_num is not None and fps_den is not None:
+        factor = Fraction(fps_num, fps_den) / clip.fps
+        factor_num, factor_den = factor.as_integer_ratio()
 
     if sc_threshold is not None:
         clip = sc_detect(clip, sc_threshold)
