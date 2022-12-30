@@ -6,6 +6,7 @@ from functools import partial
 from threading import Lock
 
 import numpy as np
+import tensorrt
 import torch
 import torch.nn.functional as F
 import vapoursynth as vs
@@ -16,6 +17,7 @@ from torch_tensorrt.fx.utils import LowerPrecision
 package_dir = os.path.dirname(os.path.realpath(__file__))
 
 
+@torch.inference_mode()
 def RIFE(
     clip: vs.VideoNode,
     device_index: int | None = None,
@@ -38,6 +40,7 @@ def RIFE(
     """Real-Time Intermediate Flow Estimation for Video Frame Interpolation
 
     :param clip:                    Clip to process. Only RGBH and RGBS formats are supported.
+                                    RGBH performs inference in FP16 mode while RGBS performs inference in FP32 mode.
     :param device_index:            Device ordinal of the GPU.
     :param num_streams:             Number of CUDA streams to enqueue the kernels.
     :param fusion:                  Enable fusion through nvFuser. Not allowed in TensorRT. (experimental)
@@ -46,12 +49,9 @@ def RIFE(
     :param trt:                     Use TensorRT for high-performance inference.
                                     Not supported for '4.0' and '4.1' models.
     :param trt_max_workspace_size:  Maximum workspace size for TensorRT engine.
-    :param trt_cache_path:          Path for TensorRT engine and timing cache files.
-                                    Engine will be cached when it's built for the first time.
-                                    Note each engine is created for specific settings.
-                                    It is suggested to reuse cache only in the same hardware/software configurations
-                                    (for example, CUDA/cuDNN/TensorRT versions, device model, and clock frequency);
-                                    otherwise, functional or performance issues may occur.
+    :param trt_cache_path:          Path for TensorRT engine file. Engine will be cached when it's built for the first
+                                    time. Note each engine is created for specific settings such as model path/name,
+                                    precision, workspace etc, and specific GPUs and it's not portable.
     :param model:                   Model version to use. Must be '4.0', '4.1', '4.2', '4.3', '4.4', '4.5', or '4.6'.
     :param factor_num:              Numerator of factor for target frame rate.
                                     For example `factor_num=5, factor_den=2` will multiply the frame rate by 2.5.
@@ -114,12 +114,12 @@ def RIFE(
     if os.path.getsize(os.path.join(package_dir, 'flownet_v4.0.pkl')) == 0:
         raise vs.Error("RIFE: model files have not been downloaded. run 'python -m vsrife' first")
 
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.benchmark = True
+
     fp16 = clip.format.bits_per_sample == 16
     if fp16:
         torch.set_default_tensor_type(torch.HalfTensor)
-
-    torch.backends.cuda.matmul.allow_tf32 = True
-    torch.backends.cudnn.benchmark = True
 
     device = torch.device('cuda', device_index)
 
@@ -145,12 +145,9 @@ def RIFE(
     checkpoint = torch.load(os.path.join(package_dir, f'flownet_v{model}.pkl'), map_location='cpu')
     checkpoint = {k.replace('module.', ''): v for k, v in checkpoint.items() if 'module.' in k}
 
-    flownet = IFNet(device, scale, ensemble)
+    flownet = IFNet(scale, ensemble)
     flownet.load_state_dict(checkpoint, strict=False)
     flownet.eval().to(device, memory_format=torch.channels_last)
-
-    if fusion:
-        flownet = memory_efficient_fusion(flownet)
 
     w = clip.width
     h = clip.height
@@ -159,33 +156,32 @@ def RIFE(
     ph = ((h - 1) // tmp + 1) * tmp
     padding = (0, pw - w, 0, ph - h)
 
+    if fusion:
+        flownet = memory_efficient_fusion(flownet)
+
     if cuda_graphs:
-        with torch.inference_mode():
-            static_img0: list[torch.Tensor] = []
-            static_img1: list[torch.Tensor] = []
-            static_timestep: list[torch.Tensor] = []
-            static_output: list[torch.Tensor] = []
-            graph: list[torch.cuda.CUDAGraph] = []
+        graph: list[torch.cuda.CUDAGraph] = []
+        static_img0: list[torch.Tensor] = []
+        static_img1: list[torch.Tensor] = []
+        static_timestep: list[torch.Tensor] = []
+        static_output: list[torch.Tensor] = []
 
-            for i in range(num_streams):
-                static_img0.append(torch.empty(1, 3, ph, pw, device=device, memory_format=torch.channels_last))
-                static_img1.append(torch.empty(1, 3, ph, pw, device=device, memory_format=torch.channels_last))
-                static_timestep.append(torch.empty(1, 1, ph, pw, device=device, memory_format=torch.channels_last))
+        for i in range(num_streams):
+            static_img0.append(torch.empty(1, 3, ph, pw, device=device, memory_format=torch.channels_last))
+            static_img1.append(torch.empty(1, 3, ph, pw, device=device, memory_format=torch.channels_last))
+            static_timestep.append(torch.empty(1, 1, ph, pw, device=device, memory_format=torch.channels_last))
 
-                torch.cuda.synchronize(device=device)
-                stream[i].wait_stream(torch.cuda.current_stream(device=device))
-                with torch.cuda.stream(stream[i]):
-                    flownet(static_img0[i], static_img1[i], static_timestep[i])
-                torch.cuda.current_stream(device=device).wait_stream(stream[i])
-                torch.cuda.synchronize(device=device)
+            torch.cuda.synchronize(device=device)
+            stream[i].wait_stream(torch.cuda.current_stream(device=device))
+            with torch.cuda.stream(stream[i]):
+                flownet(static_img0[i], static_img1[i], static_timestep[i])
+            torch.cuda.current_stream(device=device).wait_stream(stream[i])
+            torch.cuda.synchronize(device=device)
 
-                graph.append(torch.cuda.CUDAGraph())
-                with torch.cuda.graph(graph[i], stream=stream[i]):
-                    static_output.append(flownet(static_img0[i], static_img1[i], static_timestep[i]))
-
-    if trt:
-        import tensorrt
-
+            graph.append(torch.cuda.CUDAGraph())
+            with torch.cuda.graph(graph[i], stream=stream[i]):
+                static_output.append(flownet(static_img0[i], static_img1[i], static_timestep[i]))
+    elif trt:
         device_name = torch.cuda.get_device_name(device)
         trt_version = tensorrt.__version__
         precision = 'fp16' if fp16 else 'fp32'
@@ -206,26 +202,24 @@ def RIFE(
         )
 
         if not os.path.isfile(trt_engine_path):
-            with torch.inference_mode():
-                flownet = compile(
-                    flownet,
-                    [
-                        torch.empty(1, 3, ph, pw, device=device, memory_format=torch.channels_last),
-                        torch.empty(1, 3, ph, pw, device=device, memory_format=torch.channels_last),
-                        torch.empty(1, 1, ph, pw, device=device, memory_format=torch.channels_last),
-                    ],
-                    max_workspace_size=trt_max_workspace_size,
-                    explicit_batch_dimension=True,
-                    lower_precision=LowerPrecision.FP16 if fp16 else LowerPrecision.FP32,
-                    timing_cache_prefix=os.path.join(trt_cache_path, 'trt_timing_cache'),
-                    save_timing_cache=True,
-                    dynamic_batch=False,
-                )
-
+            flownet = compile(
+                flownet,
+                [
+                    torch.empty(1, 3, ph, pw, device=device, memory_format=torch.channels_last),
+                    torch.empty(1, 3, ph, pw, device=device, memory_format=torch.channels_last),
+                    torch.empty(1, 1, ph, pw, device=device, memory_format=torch.channels_last),
+                ],
+                max_workspace_size=trt_max_workspace_size,
+                explicit_batch_dimension=True,
+                lower_precision=LowerPrecision.FP16 if fp16 else LowerPrecision.FP32,
+                timing_cache_prefix=os.path.join(trt_cache_path, 'trt_timing_cache'),
+                save_timing_cache=True,
+                dynamic_batch=False,
+            )
             torch.save(flownet, trt_engine_path)
-            del flownet
-            torch.cuda.empty_cache()
 
+        del flownet
+        torch.cuda.empty_cache()
         flownet = [torch.load(trt_engine_path) for _ in range(num_streams)]
 
     if fps_num is not None and fps_den is not None:
@@ -254,8 +248,8 @@ def RIFE(
             local_index = index
 
         with stream_lock[local_index], torch.cuda.stream(stream[local_index]):
-            img0 = frame_to_tensor(f[0]).to(device, memory_format=torch.channels_last)
-            img1 = frame_to_tensor(f[1]).to(device, memory_format=torch.channels_last)
+            img0 = frame_to_tensor(f[0], device)
+            img1 = frame_to_tensor(f[1], device)
             img0 = F.pad(img0, padding)
             img1 = F.pad(img1, padding)
 
@@ -298,9 +292,9 @@ def sc_detect(clip: vs.VideoNode, threshold: float) -> vs.VideoNode:
     return clip.std.FrameEval(lambda n: clip.std.ModifyFrame([clip, sc_clip], copy_property), clip_src=[clip, sc_clip])
 
 
-def frame_to_tensor(frame: vs.VideoFrame) -> torch.Tensor:
+def frame_to_tensor(frame: vs.VideoFrame, device: torch.device) -> torch.Tensor:
     array = np.stack([np.asarray(frame[plane]) for plane in range(frame.format.num_planes)])
-    return torch.from_numpy(array).unsqueeze(0)
+    return torch.from_numpy(array).unsqueeze(0).to(device, memory_format=torch.channels_last)
 
 
 def tensor_to_frame(tensor: torch.Tensor, frame: vs.VideoFrame) -> vs.VideoFrame:

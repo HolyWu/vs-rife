@@ -43,13 +43,12 @@ class IFBlock(nn.Module):
         return flow, mask
 
 class IFNet(nn.Module):
-    def __init__(self, device, scale=1, ensemble=False):
+    def __init__(self, scale=1, ensemble=False):
         super(IFNet, self).__init__()
         self.block0 = IFBlock(7, c=192)
         self.block1 = IFBlock(8+4, c=128)
         self.block2 = IFBlock(8+4, c=96)
         self.block3 = IFBlock(8+4, c=64)
-        self.device = device
         self.scale = scale
         self.ensemble = ensemble
 
@@ -76,8 +75,8 @@ class IFNet(nn.Module):
                     for k in range(4):
                         scale_list[k] *= 2
                     flow, mask = block[0](torch.cat((img0[:, :3], img1[:, :3], timestep), 1), None, scale=scale_list[0])
-                    warped_img0 = warp(img0, flow[:, :2], self.device)
-                    warped_img1 = warp(img1, flow[:, 2:4], self.device)
+                    warped_img0 = warp(img0, flow[:, :2])
+                    warped_img1 = warp(img1, flow[:, 2:4])
                     f0, m0 = block[i](torch.cat((warped_img0[:, :3], warped_img1[:, :3], timestep, mask), 1), flow, scale=scale_list[i])
                 if self.ensemble:
                     f1, m1 = block[i](torch.cat((warped_img1[:, :3], warped_img0[:, :3], 1-timestep, -mask), 1), torch.cat((flow[:, 2:4], flow[:, :2]), 1), scale=scale_list[i])
@@ -87,9 +86,8 @@ class IFNet(nn.Module):
                 mask = mask + m0
             mask_list.append(mask)
             flow_list.append(flow)
-            warped_img0 = warp(img0, flow[:, :2], self.device)
-            warped_img1 = warp(img1, flow[:, 2:4], self.device)
+            warped_img0 = warp(img0, flow[:, :2])
+            warped_img1 = warp(img1, flow[:, 2:4])
             merged.append((warped_img0, warped_img1))
         mask_list[3] = torch.sigmoid(mask_list[3])
-        merged[3] = merged[3][0] * mask_list[3] + merged[3][1] * (1 - mask_list[3])
-        return merged[3]
+        return merged[3][0] * mask_list[3] + merged[3][1] * (1 - mask_list[3])

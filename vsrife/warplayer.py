@@ -3,15 +3,16 @@ import torch
 backwarp_tenGrid = {}
 
 
-def warp(tenInput, tenFlow, device):
+def warp(tenInput, tenFlow):
     orig_dtype = tenInput.dtype
     tenInput = tenInput.float()
     tenFlow = tenFlow.float()
+
     k = (str(tenFlow.device), str(tenFlow.size()))
     if k not in backwarp_tenGrid:
-        tenHorizontal = torch.linspace(-1.0, 1.0, tenFlow.shape[3], dtype=torch.float, device=device).view(
+        tenHorizontal = torch.linspace(-1.0, 1.0, tenFlow.shape[3], dtype=torch.float, device=tenInput.device).view(
             1, 1, 1, tenFlow.shape[3]).expand(tenFlow.shape[0], -1, tenFlow.shape[2], -1)
-        tenVertical = torch.linspace(-1.0, 1.0, tenFlow.shape[2], dtype=torch.float, device=device).view(
+        tenVertical = torch.linspace(-1.0, 1.0, tenFlow.shape[2], dtype=torch.float, device=tenInput.device).view(
             1, 1, tenFlow.shape[2], 1).expand(tenFlow.shape[0], -1, -1, tenFlow.shape[3])
         backwarp_tenGrid[k] = torch.cat(
             [tenHorizontal, tenVertical], 1)
@@ -21,6 +22,7 @@ def warp(tenInput, tenFlow, device):
 
     g = (backwarp_tenGrid[k] + tenFlow).permute(0, 2, 3, 1)
     output = torch.nn.functional.grid_sample(input=tenInput, grid=g, mode='bilinear', padding_mode='border', align_corners=True)
+
     if orig_dtype == torch.half:
         output = output.half()
     return output
