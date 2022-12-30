@@ -214,8 +214,6 @@ def RIFE(
                 max_workspace_size=trt_max_workspace_size,
                 explicit_batch_dimension=True,
                 lower_precision=LowerPrecision.FP16 if fp16 else LowerPrecision.FP32,
-                timing_cache_prefix=os.path.join(trt_cache_path, 'trt_timing_cache'),
-                save_timing_cache=True,
                 dynamic_batch=False,
             )
             torch.save(flownet, trt_engine_path)
