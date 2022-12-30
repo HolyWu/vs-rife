@@ -15,7 +15,7 @@ from torch_tensorrt.fx import LowerSetting
 from torch_tensorrt.fx.lower import Lowerer
 from torch_tensorrt.fx.utils import LowerPrecision
 
-__version__ = '3.0.0'
+__version__ = '3.1.0'
 
 package_dir = os.path.dirname(os.path.realpath(__file__))
 
