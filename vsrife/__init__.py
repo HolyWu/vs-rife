@@ -211,6 +211,7 @@ def RIFE(
                     torch.empty(1, 3, ph, pw, device=device, memory_format=torch.channels_last),
                     torch.empty(1, 1, ph, pw, device=device, memory_format=torch.channels_last),
                 ],
+                min_acc_module_size=1,
                 max_workspace_size=trt_max_workspace_size,
                 explicit_batch_dimension=True,
                 lower_precision=LowerPrecision.FP16 if fp16 else LowerPrecision.FP32,
