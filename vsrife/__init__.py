@@ -22,7 +22,7 @@ def RIFE(
     clip: vs.VideoNode,
     device_index: int | None = None,
     num_streams: int = 3,
-    fusion: bool = False,
+    nvfuser: bool = False,
     cuda_graphs: bool = False,
     trt: bool = False,
     trt_max_workspace_size: int = 1 << 30,
@@ -43,7 +43,7 @@ def RIFE(
                                     RGBH performs inference in FP16 mode while RGBS performs inference in FP32 mode.
     :param device_index:            Device ordinal of the GPU.
     :param num_streams:             Number of CUDA streams to enqueue the kernels.
-    :param fusion:                  Enable fusion through nvFuser. Not allowed in TensorRT. (experimental)
+    :param nvfuser:                 Enable fusion through nvFuser. Not allowed in TensorRT. (experimental)
     :param cuda_graphs:             Use CUDA Graphs to remove CPU overhead associated with launching CUDA kernels
                                     sequentially. Not allowed in TensorRT. Not supported for '4.0' and '4.1' models.
     :param trt:                     Use TensorRT for high-performance inference.
@@ -84,8 +84,8 @@ def RIFE(
         raise vs.Error('RIFE: setting num_streams greater than `core.num_threads` is useless')
 
     if trt:
-        if fusion:
-            raise vs.Error('RIFE: fusion and trt are mutually exclusive')
+        if nvfuser:
+            raise vs.Error('RIFE: nvfuser and trt are mutually exclusive')
 
         if cuda_graphs:
             raise vs.Error('RIFE: cuda_graphs and trt are mutually exclusive')
@@ -156,7 +156,7 @@ def RIFE(
     ph = ((h - 1) // tmp + 1) * tmp
     padding = (0, pw - w, 0, ph - h)
 
-    if fusion:
+    if nvfuser:
         flownet = memory_efficient_fusion(flownet)
 
     if cuda_graphs:
