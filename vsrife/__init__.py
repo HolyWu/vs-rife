@@ -189,7 +189,7 @@ def RIFE(
         precision = 'fp16' if fp16 else 'fp32'
         dimensions = f'{pw}x{ph}'
         trt_engine_path = os.path.join(
-            trt_cache_path,
+            os.path.realpath(trt_cache_path),
             (
                 f'flownet_v{model}'
                 + f'_{device_name}'
