@@ -20,8 +20,9 @@ classifiers = [
 dependencies = [
   "numpy",
   "requests",
+  "tensorrt>=8.5.2.2",
   "torch>=1.13.0",
-  "torch-tensorrt-fx-only",
+  "torch-tensorrt-fx-only>=1.3.0",
   "tqdm",
   "VapourSynth>=55"
 ]
