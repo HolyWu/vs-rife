@@ -11,7 +11,8 @@ import torch
 import torch.nn.functional as F
 import vapoursynth as vs
 from functorch.compile import memory_efficient_fusion
-from torch_tensorrt.fx import compile
+from torch_tensorrt.fx import LowerSetting
+from torch_tensorrt.fx.lower import Lowerer
 from torch_tensorrt.fx.utils import LowerPrecision
 
 __version__ = '3.0.0'
@@ -144,7 +145,9 @@ def RIFE(
         case '4.6':
             from .IFNet_HDv3_v4_6 import IFNet
 
-    checkpoint = torch.load(os.path.join(package_dir, f'flownet_v{model}.pkl'), map_location='cpu')
+    model_name = f'flownet_v{model}.pkl'
+
+    checkpoint = torch.load(os.path.join(package_dir, model_name), map_location='cpu')
     checkpoint = {k.replace('module.', ''): v for k, v in checkpoint.items() if 'module.' in k}
 
     flownet = IFNet(scale, ensemble)
@@ -186,17 +189,17 @@ def RIFE(
     elif trt:
         device_name = torch.cuda.get_device_name(device)
         trt_version = tensorrt.__version__
-        precision = 'fp16' if fp16 else 'fp32'
         dimensions = f'{pw}x{ph}'
+        precision = 'fp16' if fp16 else 'fp32'
         trt_engine_path = os.path.join(
             os.path.realpath(trt_cache_path),
             (
-                f'flownet_v{model}'
+                f'{model_name}'
                 + f'_{device_name}'
                 + f'_trt-{trt_version}'
-                + f'_workspace-{trt_max_workspace_size}'
-                + f'_{precision}'
                 + f'_{dimensions}'
+                + f'_{precision}'
+                + f'_workspace-{trt_max_workspace_size}'
                 + f'_scale-{scale}'
                 + f'_ensemble-{ensemble}'
                 + '.pt'
@@ -204,18 +207,22 @@ def RIFE(
         )
 
         if not os.path.isfile(trt_engine_path):
-            flownet = compile(
+            lower_setting = LowerSetting(
+                lower_precision=LowerPrecision.FP16 if fp16 else LowerPrecision.FP32,
+                min_acc_module_size=1,
+                max_workspace_size=trt_max_workspace_size,
+                dynamic_batch=False,
+                tactic_sources=1 << int(tensorrt.TacticSource.EDGE_MASK_CONVOLUTIONS)
+                | 1 << int(tensorrt.TacticSource.JIT_CONVOLUTIONS),
+            )
+            lowerer = Lowerer.create(lower_setting=lower_setting)
+            flownet = lowerer(
                 flownet,
                 [
                     torch.empty(1, 3, ph, pw, device=device, memory_format=torch.channels_last),
                     torch.empty(1, 3, ph, pw, device=device, memory_format=torch.channels_last),
                     torch.empty(1, 1, ph, pw, device=device, memory_format=torch.channels_last),
                 ],
-                min_acc_module_size=1,
-                max_workspace_size=trt_max_workspace_size,
-                explicit_batch_dimension=True,
-                lower_precision=LowerPrecision.FP16 if fp16 else LowerPrecision.FP32,
-                dynamic_batch=False,
             )
             torch.save(flownet, trt_engine_path)
 
