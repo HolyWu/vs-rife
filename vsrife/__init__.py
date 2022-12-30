@@ -14,6 +14,8 @@ from functorch.compile import memory_efficient_fusion
 from torch_tensorrt.fx import compile
 from torch_tensorrt.fx.utils import LowerPrecision
 
+__version__ = '3.0.0'
+
 package_dir = os.path.dirname(os.path.realpath(__file__))
 
 
