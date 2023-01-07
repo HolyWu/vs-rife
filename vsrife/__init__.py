@@ -240,9 +240,6 @@ def RIFE(
     index = -1
     index_lock = Lock()
 
-    def frame_adjuster(n: int, clip: vs.VideoNode) -> vs.VideoNode:
-        return clip[n * factor_den // factor_num]
-
     @torch.inference_mode()
     def inference(n: int, f: list[vs.VideoFrame]) -> vs.VideoFrame:
         remainder = n * factor_den % factor_num
@@ -277,15 +274,15 @@ def RIFE(
 
             return tensor_to_frame(output[:, :, :h, :w], f[0].copy())
 
-    format_clip = clip.std.BlankClip(
-        length=clip.num_frames * factor_num // factor_den,
-        fpsnum=clip.fps.numerator * factor_num,
-        fpsden=clip.fps.denominator * factor_den,
-    )
+    clip0 = vs.core.std.Interleave([clip] * factor_num)
+    if factor_den > 1:
+        clip0 = clip0.std.SelectEvery(cycle=factor_den, offsets=0)
 
-    clip0 = format_clip.std.FrameEval(partial(frame_adjuster, clip=clip), clip_src=clip)
     clip1 = clip.std.DuplicateFrames(frames=clip.num_frames - 1).std.Trim(first=1)
-    clip1 = format_clip.std.FrameEval(partial(frame_adjuster, clip=clip1), clip_src=clip1)
+    clip1 = vs.core.std.Interleave([clip1] * factor_num)
+    if factor_den > 1:
+        clip1 = clip1.std.SelectEvery(cycle=factor_den, offsets=0)
+
     return clip0.std.FrameEval(lambda n: clip0.std.ModifyFrame([clip0, clip1], inference), clip_src=[clip0, clip1])
 
 
