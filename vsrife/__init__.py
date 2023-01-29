@@ -23,7 +23,7 @@ package_dir = os.path.dirname(os.path.realpath(__file__))
 def RIFE(
     clip: vs.VideoNode,
     device_index: int | None = None,
-    num_streams: int = 3,
+    num_streams: int = 2,
     nvfuser: bool = False,
     cuda_graphs: bool = False,
     trt: bool = False,
