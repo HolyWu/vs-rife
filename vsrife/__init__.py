@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 from fractions import Fraction
-from functools import partial
 from threading import Lock
 
 import numpy as np
@@ -15,7 +14,7 @@ from torch_tensorrt.fx import LowerSetting
 from torch_tensorrt.fx.lower import Lowerer
 from torch_tensorrt.fx.utils import LowerPrecision
 
-__version__ = '3.1.0'
+__version__ = "3.1.0"
 
 package_dir = os.path.dirname(os.path.realpath(__file__))
 
@@ -30,7 +29,7 @@ def RIFE(
     trt: bool = False,
     trt_max_workspace_size: int = 1 << 30,
     trt_cache_path: str = package_dir,
-    model: str = '4.6',
+    model: str = "4.6",
     factor_num: int = 2,
     factor_den: int = 1,
     fps_num: int | None = None,
@@ -69,52 +68,52 @@ def RIFE(
                                     Leave it None if the clip already has _SceneChangeNext properly set.
     """
     if not isinstance(clip, vs.VideoNode):
-        raise vs.Error('RIFE: this is not a clip')
+        raise vs.Error("RIFE: this is not a clip")
 
     if clip.format.id not in [vs.RGBH, vs.RGBS]:
-        raise vs.Error('RIFE: only RGBH and RGBS formats are supported')
+        raise vs.Error("RIFE: only RGBH and RGBS formats are supported")
 
     if clip.num_frames < 2:
         raise vs.Error("RIFE: clip's number of frames must be at least 2")
 
     if not torch.cuda.is_available():
-        raise vs.Error('RIFE: CUDA is not available')
+        raise vs.Error("RIFE: CUDA is not available")
 
     if num_streams < 1:
-        raise vs.Error('RIFE: num_streams must be at least 1')
+        raise vs.Error("RIFE: num_streams must be at least 1")
 
     if num_streams > vs.core.num_threads:
-        raise vs.Error('RIFE: setting num_streams greater than `core.num_threads` is useless')
+        raise vs.Error("RIFE: setting num_streams greater than `core.num_threads` is useless")
 
     if trt:
         if nvfuser:
-            raise vs.Error('RIFE: nvfuser and trt are mutually exclusive')
+            raise vs.Error("RIFE: nvfuser and trt are mutually exclusive")
 
         if cuda_graphs:
-            raise vs.Error('RIFE: cuda_graphs and trt are mutually exclusive')
+            raise vs.Error("RIFE: cuda_graphs and trt are mutually exclusive")
 
-    if model not in ['4.0', '4.1', '4.2', '4.3', '4.4', '4.5', '4.6']:
+    if model not in ["4.0", "4.1", "4.2", "4.3", "4.4", "4.5", "4.6"]:
         raise vs.Error("RIFE: model must be '4.0', '4.1', '4.2', '4.3', '4.4', '4.5', or '4.6'")
 
     if factor_num < 1:
-        raise vs.Error('RIFE: factor_num must be at least 1')
+        raise vs.Error("RIFE: factor_num must be at least 1")
 
     if factor_den < 1:
-        raise vs.Error('RIFE: factor_den must be at least 1')
+        raise vs.Error("RIFE: factor_den must be at least 1")
 
     if fps_num is not None and fps_num < 1:
-        raise vs.Error('RIFE: fps_num must be at least 1')
+        raise vs.Error("RIFE: fps_num must be at least 1")
 
     if fps_den is not None and fps_den < 1:
-        raise vs.Error('RIFE: fps_den must be at least 1')
+        raise vs.Error("RIFE: fps_den must be at least 1")
 
     if fps_num is not None and fps_den is not None and clip.fps == 0:
-        raise vs.Error('RIFE: clip does not have a valid frame rate and hence fps_num and fps_den cannot be used')
+        raise vs.Error("RIFE: clip does not have a valid frame rate and hence fps_num and fps_den cannot be used")
 
     if scale not in [0.25, 0.5, 1.0, 2.0, 4.0]:
-        raise vs.Error('RIFE: scale must be 0.25, 0.5, 1.0, 2.0, or 4.0')
+        raise vs.Error("RIFE: scale must be 0.25, 0.5, 1.0, 2.0, or 4.0")
 
-    if os.path.getsize(os.path.join(package_dir, 'flownet_v4.0.pkl')) == 0:
+    if os.path.getsize(os.path.join(package_dir, "flownet_v4.0.pkl")) == 0:
         raise vs.Error("RIFE: model files have not been downloaded. run 'python -m vsrife' first")
 
     torch.backends.cuda.matmul.allow_tf32 = True
@@ -124,31 +123,31 @@ def RIFE(
     if fp16:
         torch.set_default_tensor_type(torch.HalfTensor)
 
-    device = torch.device('cuda', device_index)
+    device = torch.device("cuda", device_index)
 
     stream = [torch.cuda.Stream(device=device) for _ in range(num_streams)]
     stream_lock = [Lock() for _ in range(num_streams)]
 
     match model:
-        case '4.0':
+        case "4.0":
             from .IFNet_HDv3_v4_0 import IFNet
-        case '4.1':
+        case "4.1":
             from .IFNet_HDv3_v4_1 import IFNet
-        case '4.2':
+        case "4.2":
             from .IFNet_HDv3_v4_2 import IFNet
-        case '4.3':
+        case "4.3":
             from .IFNet_HDv3_v4_3 import IFNet
-        case '4.4':
+        case "4.4":
             from .IFNet_HDv3_v4_4 import IFNet
-        case '4.5':
+        case "4.5":
             from .IFNet_HDv3_v4_5 import IFNet
-        case '4.6':
+        case "4.6":
             from .IFNet_HDv3_v4_6 import IFNet
 
-    model_name = f'flownet_v{model}.pkl'
+    model_name = f"flownet_v{model}.pkl"
 
-    checkpoint = torch.load(os.path.join(package_dir, model_name), map_location='cpu')
-    checkpoint = {k.replace('module.', ''): v for k, v in checkpoint.items() if 'module.' in k}
+    checkpoint = torch.load(os.path.join(package_dir, model_name), map_location="cpu")
+    checkpoint = {k.replace("module.", ""): v for k, v in checkpoint.items() if "module." in k}
 
     flownet = IFNet(scale, ensemble)
     flownet.load_state_dict(checkpoint, strict=False)
@@ -189,20 +188,20 @@ def RIFE(
     elif trt:
         device_name = torch.cuda.get_device_name(device)
         trt_version = tensorrt.__version__
-        dimensions = f'{pw}x{ph}'
-        precision = 'fp16' if fp16 else 'fp32'
+        dimensions = f"{pw}x{ph}"
+        precision = "fp16" if fp16 else "fp32"
         trt_engine_path = os.path.join(
             os.path.realpath(trt_cache_path),
             (
-                f'{model_name}'
-                + f'_{device_name}'
-                + f'_trt-{trt_version}'
-                + f'_{dimensions}'
-                + f'_{precision}'
-                + f'_workspace-{trt_max_workspace_size}'
-                + f'_scale-{scale}'
-                + f'_ensemble-{ensemble}'
-                + '.pt'
+                f"{model_name}"
+                + f"_{device_name}"
+                + f"_trt-{trt_version}"
+                + f"_{dimensions}"
+                + f"_{precision}"
+                + f"_workspace-{trt_max_workspace_size}"
+                + f"_scale-{scale}"
+                + f"_ensemble-{ensemble}"
+                + ".pt"
             ),
         )
 
@@ -244,7 +243,7 @@ def RIFE(
     def inference(n: int, f: list[vs.VideoFrame]) -> vs.VideoFrame:
         remainder = n * factor_den % factor_num
 
-        if remainder == 0 or (sc and f[0].props.get('_SceneChangeNext')):
+        if remainder == 0 or (sc and f[0].props.get("_SceneChangeNext")):
             return f[0]
 
         nonlocal index
@@ -289,11 +288,11 @@ def RIFE(
 def sc_detect(clip: vs.VideoNode, threshold: float) -> vs.VideoNode:
     def copy_property(n: int, f: list[vs.VideoFrame]) -> vs.VideoFrame:
         fout = f[0].copy()
-        fout.props['_SceneChangePrev'] = f[1].props['_SceneChangePrev']
-        fout.props['_SceneChangeNext'] = f[1].props['_SceneChangeNext']
+        fout.props["_SceneChangePrev"] = f[1].props["_SceneChangePrev"]
+        fout.props["_SceneChangeNext"] = f[1].props["_SceneChangeNext"]
         return fout
 
-    sc_clip = clip.resize.Bicubic(format=vs.GRAY8, matrix_s='709').misc.SCDetect(threshold)
+    sc_clip = clip.resize.Bicubic(format=vs.GRAY8, matrix_s="709").misc.SCDetect(threshold)
     return clip.std.FrameEval(lambda n: clip.std.ModifyFrame([clip, sc_clip], copy_property), clip_src=[clip, sc_clip])
 
 
