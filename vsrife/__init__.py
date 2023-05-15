@@ -117,7 +117,6 @@ def RIFE(
         raise vs.Error("RIFE: model files have not been downloaded. run 'python -m vsrife' first")
 
     torch.backends.cuda.matmul.allow_tf32 = True
-    torch.backends.cudnn.benchmark = True
 
     fp16 = clip.format.bits_per_sample == 16
     if fp16:
