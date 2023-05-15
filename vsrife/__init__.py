@@ -116,7 +116,7 @@ def RIFE(
     if os.path.getsize(os.path.join(package_dir, "flownet_v4.0.pkl")) == 0:
         raise vs.Error("RIFE: model files have not been downloaded. run 'python -m vsrife' first")
 
-    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.set_float32_matmul_precision("high")
 
     fp16 = clip.format.bits_per_sample == 16
     if fp16:
