@@ -122,7 +122,7 @@ def RIFE(
 
     fp16 = clip.format.bits_per_sample == 16
     if fp16:
-        torch.set_default_tensor_type(torch.HalfTensor)
+        torch.set_default_dtype(torch.half)
 
     device = torch.device("cuda", device_index)
 
