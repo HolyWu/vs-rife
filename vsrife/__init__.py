@@ -16,7 +16,7 @@ from torch_tensorrt.fx.utils import LowerPrecision
 
 __version__ = "3.1.0"
 
-package_dir = os.path.dirname(os.path.realpath(__file__))
+model_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "models")
 
 
 @torch.inference_mode()
@@ -28,7 +28,7 @@ def RIFE(
     cuda_graphs: bool = False,
     trt: bool = False,
     trt_max_workspace_size: int = 1 << 30,
-    trt_cache_path: str = package_dir,
+    trt_cache_path: str = model_dir,
     model: str = "4.6",
     factor_num: int = 2,
     factor_den: int = 1,
@@ -113,7 +113,7 @@ def RIFE(
     if scale not in [0.25, 0.5, 1.0, 2.0, 4.0]:
         raise vs.Error("RIFE: scale must be 0.25, 0.5, 1.0, 2.0, or 4.0")
 
-    if os.path.getsize(os.path.join(package_dir, "flownet_v4.0.pkl")) == 0:
+    if os.path.getsize(os.path.join(model_dir, "flownet_v4.0.pkl")) == 0:
         raise vs.Error("RIFE: model files have not been downloaded. run 'python -m vsrife' first")
 
     torch.set_float32_matmul_precision("high")
@@ -145,7 +145,7 @@ def RIFE(
 
     model_name = f"flownet_v{model}.pkl"
 
-    checkpoint = torch.load(os.path.join(package_dir, model_name), map_location="cpu")
+    checkpoint = torch.load(os.path.join(model_dir, model_name), map_location="cpu")
     checkpoint = {k.replace("module.", ""): v for k, v in checkpoint.items() if "module." in k}
 
     flownet = IFNet(scale, ensemble)
