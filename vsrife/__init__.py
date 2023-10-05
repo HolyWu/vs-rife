@@ -147,11 +147,11 @@ def RIFE(
 
     model_name = f"flownet_v{model}.pkl"
 
-    checkpoint = torch.load(os.path.join(model_dir, model_name), map_location="cpu")
-    checkpoint = {k.replace("module.", ""): v for k, v in checkpoint.items() if "module." in k}
+    state_dict = torch.load(os.path.join(model_dir, model_name), map_location="cpu")
+    state_dict = {k.replace("module.", ""): v for k, v in state_dict.items() if "module." in k}
 
     flownet = IFNet(scale, ensemble)
-    flownet.load_state_dict(checkpoint, strict=False)
+    flownet.load_state_dict(state_dict, strict=False)
     flownet.eval().to(device, memory_format=torch.channels_last)
 
     w = clip.width
@@ -219,9 +219,9 @@ def RIFE(
             flownet = lowerer(
                 flownet,
                 [
-                    torch.empty(1, 3, ph, pw, device=device, memory_format=torch.channels_last),
-                    torch.empty(1, 3, ph, pw, device=device, memory_format=torch.channels_last),
-                    torch.empty(1, 1, ph, pw, device=device, memory_format=torch.channels_last),
+                    torch.zeros((1, 3, ph, pw), device=device).to(memory_format=torch.channels_last),
+                    torch.zeros((1, 3, ph, pw), device=device).to(memory_format=torch.channels_last),
+                    torch.zeros((1, 1, ph, pw), device=device).to(memory_format=torch.channels_last),
                 ],
             )
             torch.save(flownet, trt_engine_path)
