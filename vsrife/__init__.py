@@ -9,7 +9,6 @@ import tensorrt
 import torch
 import torch.nn.functional as F
 import vapoursynth as vs
-from functorch.compile import memory_efficient_fusion
 from torch_tensorrt.fx import LowerSetting
 from torch_tensorrt.fx.lower import Lowerer
 from torch_tensorrt.fx.utils import LowerPrecision
@@ -26,8 +25,6 @@ def RIFE(
     clip: vs.VideoNode,
     device_index: int | None = None,
     num_streams: int = 2,
-    nvfuser: bool = False,
-    cuda_graphs: bool = False,
     trt: bool = False,
     trt_max_workspace_size: int = 1 << 30,
     trt_cache_path: str = model_dir,
@@ -47,9 +44,6 @@ def RIFE(
                                     RGBH performs inference in FP16 mode while RGBS performs inference in FP32 mode.
     :param device_index:            Device ordinal of the GPU.
     :param num_streams:             Number of CUDA streams to enqueue the kernels.
-    :param nvfuser:                 Enable fusion through nvFuser. Not allowed in TensorRT. (experimental)
-    :param cuda_graphs:             Use CUDA Graphs to remove CPU overhead associated with launching CUDA kernels
-                                    sequentially. Not allowed in TensorRT. Not supported for '4.0' and '4.1' models.
     :param trt:                     Use TensorRT for high-performance inference.
                                     Not supported for '4.0' and '4.1' models.
     :param trt_max_workspace_size:  Maximum workspace size for TensorRT engine.
@@ -86,13 +80,6 @@ def RIFE(
 
     if num_streams > vs.core.num_threads:
         raise vs.Error("RIFE: setting num_streams greater than `core.num_threads` is useless")
-
-    if trt:
-        if nvfuser:
-            raise vs.Error("RIFE: nvfuser and trt are mutually exclusive")
-
-        if cuda_graphs:
-            raise vs.Error("RIFE: cuda_graphs and trt are mutually exclusive")
 
     if model not in ["4.0", "4.1", "4.2", "4.3", "4.4", "4.5", "4.6"]:
         raise vs.Error("RIFE: model must be '4.0', '4.1', '4.2', '4.3', '4.4', '4.5', or '4.6'")
@@ -161,32 +148,7 @@ def RIFE(
     ph = ((h - 1) // tmp + 1) * tmp
     padding = (0, pw - w, 0, ph - h)
 
-    if nvfuser:
-        flownet = memory_efficient_fusion(flownet)
-
-    if cuda_graphs:
-        graph: list[torch.cuda.CUDAGraph] = []
-        static_img0: list[torch.Tensor] = []
-        static_img1: list[torch.Tensor] = []
-        static_timestep: list[torch.Tensor] = []
-        static_output: list[torch.Tensor] = []
-
-        for i in range(num_streams):
-            static_img0.append(torch.empty(1, 3, ph, pw, device=device, memory_format=torch.channels_last))
-            static_img1.append(torch.empty(1, 3, ph, pw, device=device, memory_format=torch.channels_last))
-            static_timestep.append(torch.empty(1, 1, ph, pw, device=device, memory_format=torch.channels_last))
-
-            torch.cuda.synchronize(device=device)
-            stream[i].wait_stream(torch.cuda.current_stream(device=device))
-            with torch.cuda.stream(stream[i]):
-                flownet(static_img0[i], static_img1[i], static_timestep[i])
-            torch.cuda.current_stream(device=device).wait_stream(stream[i])
-            torch.cuda.synchronize(device=device)
-
-            graph.append(torch.cuda.CUDAGraph())
-            with torch.cuda.graph(graph[i], stream=stream[i]):
-                static_output.append(flownet(static_img0[i], static_img1[i], static_timestep[i]))
-    elif trt:
+    if trt:
         device_name = torch.cuda.get_device_name(device)
         trt_version = tensorrt.__version__
         dimensions = f"{pw}x{ph}"
@@ -261,13 +223,7 @@ def RIFE(
             timestep = torch.full((1, 1, img0.shape[2], img0.shape[3]), remainder / factor_num, device=device)
             timestep = timestep.to(memory_format=torch.channels_last)
 
-            if cuda_graphs:
-                static_img0[local_index].copy_(img0)
-                static_img1[local_index].copy_(img1)
-                static_timestep[local_index].copy_(timestep)
-                graph[local_index].replay()
-                output = static_output[local_index]
-            elif trt:
+            if trt:
                 output = flownet[local_index](img0, img1, timestep)
             else:
                 output = flownet(img0, img1, timestep)
