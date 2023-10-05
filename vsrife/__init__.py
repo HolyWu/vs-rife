@@ -21,7 +21,7 @@ model_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "models")
 
 
 @torch.inference_mode()
-def RIFE(
+def rife(
     clip: vs.VideoNode,
     device_index: int | None = None,
     num_streams: int = 2,
@@ -64,46 +64,46 @@ def RIFE(
                                     Leave it None if the clip already has _SceneChangeNext properly set.
     """
     if not isinstance(clip, vs.VideoNode):
-        raise vs.Error("RIFE: this is not a clip")
+        raise vs.Error("rife: this is not a clip")
 
     if clip.format.id not in [vs.RGBH, vs.RGBS]:
-        raise vs.Error("RIFE: only RGBH and RGBS formats are supported")
+        raise vs.Error("rife: only RGBH and RGBS formats are supported")
 
     if clip.num_frames < 2:
-        raise vs.Error("RIFE: clip's number of frames must be at least 2")
+        raise vs.Error("rife: clip's number of frames must be at least 2")
 
     if not torch.cuda.is_available():
-        raise vs.Error("RIFE: CUDA is not available")
+        raise vs.Error("rife: CUDA is not available")
 
     if num_streams < 1:
-        raise vs.Error("RIFE: num_streams must be at least 1")
+        raise vs.Error("rife: num_streams must be at least 1")
 
     if num_streams > vs.core.num_threads:
-        raise vs.Error("RIFE: setting num_streams greater than `core.num_threads` is useless")
+        raise vs.Error("rife: setting num_streams greater than `core.num_threads` is useless")
 
     if model not in ["4.0", "4.1", "4.2", "4.3", "4.4", "4.5", "4.6"]:
-        raise vs.Error("RIFE: model must be '4.0', '4.1', '4.2', '4.3', '4.4', '4.5', or '4.6'")
+        raise vs.Error("rife: model must be '4.0', '4.1', '4.2', '4.3', '4.4', '4.5', or '4.6'")
 
     if factor_num < 1:
-        raise vs.Error("RIFE: factor_num must be at least 1")
+        raise vs.Error("rife: factor_num must be at least 1")
 
     if factor_den < 1:
-        raise vs.Error("RIFE: factor_den must be at least 1")
+        raise vs.Error("rife: factor_den must be at least 1")
 
     if fps_num is not None and fps_num < 1:
-        raise vs.Error("RIFE: fps_num must be at least 1")
+        raise vs.Error("rife: fps_num must be at least 1")
 
     if fps_den is not None and fps_den < 1:
-        raise vs.Error("RIFE: fps_den must be at least 1")
+        raise vs.Error("rife: fps_den must be at least 1")
 
     if fps_num is not None and fps_den is not None and clip.fps == 0:
-        raise vs.Error("RIFE: clip does not have a valid frame rate and hence fps_num and fps_den cannot be used")
+        raise vs.Error("rife: clip does not have a valid frame rate and hence fps_num and fps_den cannot be used")
 
     if scale not in [0.25, 0.5, 1.0, 2.0, 4.0]:
-        raise vs.Error("RIFE: scale must be 0.25, 0.5, 1.0, 2.0, or 4.0")
+        raise vs.Error("rife: scale must be 0.25, 0.5, 1.0, 2.0, or 4.0")
 
     if os.path.getsize(os.path.join(model_dir, "flownet_v4.0.pkl")) == 0:
-        raise vs.Error("RIFE: model files have not been downloaded. run 'python -m vsrife' first")
+        raise vs.Error("rife: model files have not been downloaded. run 'python -m vsrife' first")
 
     torch.set_float32_matmul_precision("high")
 

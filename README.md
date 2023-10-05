@@ -24,9 +24,9 @@ python -m vsrife
 
 ## Usage
 ```python
-from vsrife import RIFE
+from vsrife import rife
 
-ret = RIFE(clip)
+ret = rife(clip)
 ```
 
 See `__init__.py` for the description of the parameters.
