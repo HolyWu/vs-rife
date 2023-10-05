@@ -16,6 +16,8 @@ from torch_tensorrt.fx.utils import LowerPrecision
 
 __version__ = "3.1.0"
 
+os.environ["CUDA_MODULE_LOADING"] = "LAZY"
+
 model_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "models")
 
 
