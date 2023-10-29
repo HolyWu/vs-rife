@@ -51,7 +51,7 @@ def rife(
                                     time. Note each engine is created for specific settings such as model path/name,
                                     precision, workspace etc, and specific GPUs and it's not portable.
     :param model:                   Model version to use.
-                                    Must be '4.0', '4.1', '4.2', '4.3', '4.4', '4.5', '4.6', or '4.7'.
+                                    Must be '4.0', '4.1', '4.2', '4.3', '4.4', '4.5', '4.6', '4.7', or '4.8'.
     :param factor_num:              Numerator of factor for target frame rate.
                                     For example `factor_num=5, factor_den=2` will multiply the frame rate by 2.5.
     :param factor_den:              Denominator of factor for target frame rate.
@@ -60,7 +60,7 @@ def rife(
     :param scale:                   Control the process resolution for optical flow model. Try scale=0.5 for 4K video.
                                     Must be 0.25, 0.5, 1.0, 2.0, or 4.0.
     :param ensemble:                Smooth predictions in areas where the estimation is uncertain.
-                                    Not supported for '4.7' model.
+                                    Not supported for '4.7' and '4.8' models.
     :param sc:                      Avoid interpolating frames over scene changes.
     :param sc_threshold:            Threshold for scene change detection. Must be between 0.0 and 1.0.
                                     Leave it None if the clip already has _SceneChangeNext properly set.
@@ -83,8 +83,8 @@ def rife(
     if num_streams > vs.core.num_threads:
         raise vs.Error("rife: setting num_streams greater than `core.num_threads` is useless")
 
-    if model not in ["4.0", "4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7"]:
-        raise vs.Error("rife: model must be '4.0', '4.1', '4.2', '4.3', '4.4', '4.5', '4.6', or '4.7'")
+    if model not in ["4.0", "4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7", "4.8"]:
+        raise vs.Error("rife: model must be '4.0', '4.1', '4.2', '4.3', '4.4', '4.5', '4.6', '4.7', or '4.8'")
 
     if factor_num < 1:
         raise vs.Error("rife: factor_num must be at least 1")
@@ -135,6 +135,8 @@ def rife(
             from .IFNet_HDv3_v4_6 import IFNet
         case "4.7":
             from .IFNet_HDv3_v4_7 import IFNet
+        case "4.8":
+            from .IFNet_HDv3_v4_8 import IFNet
 
     model_name = f"flownet_v{model}.pkl"
 
