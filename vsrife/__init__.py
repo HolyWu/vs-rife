@@ -80,9 +80,6 @@ def rife(
     if num_streams < 1:
         raise vs.Error("rife: num_streams must be at least 1")
 
-    if num_streams > vs.core.num_threads:
-        raise vs.Error("rife: setting num_streams greater than `core.num_threads` is useless")
-
     if model not in ["4.0", "4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7", "4.8", "4.9", "4.10", "4.11"]:
         raise vs.Error(
             "rife: model must be '4.0', '4.1', '4.2', '4.3', '4.4', '4.5', '4.6', '4.7', '4.8', '4.9', '4.10', "
