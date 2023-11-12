@@ -33,6 +33,9 @@ if __name__ == "__main__":
         "flownet_v4.6",
         "flownet_v4.7",
         "flownet_v4.8",
+        "flownet_v4.9",
+        "flownet_v4.10",
+        "flownet_v4.11",
     ]
     for model in models:
         download_model(url + model + ".pkl")
