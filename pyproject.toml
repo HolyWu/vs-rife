@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "vsrife"
-version = "4.1.0"
+version = "4.2.0"
 description = "RIFE function for VapourSynth"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -18,7 +18,7 @@ classifiers = [
   "Topic :: Multimedia :: Video"
 ]
 dependencies = [
-  "numpy>=1.26.0",
+  "numpy>=1.26.1",
   "packaging>=23.2",
   "requests>=2.31.0",
   "tensorrt>=8.6.1",

@@ -13,7 +13,7 @@ from torch_tensorrt.fx import LowerSetting
 from torch_tensorrt.fx.lower import Lowerer
 from torch_tensorrt.fx.utils import LowerPrecision
 
-__version__ = "4.1.0"
+__version__ = "4.2.0"
 
 os.environ["CUDA_MODULE_LOADING"] = "LAZY"
 
