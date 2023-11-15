@@ -51,7 +51,7 @@ def rife(
                                     time. Note each engine is created for specific settings such as model path/name,
                                     precision, workspace etc, and specific GPUs and it's not portable.
     :param model:                   Model version to use. Must be '4.0', '4.1', '4.2', '4.3', '4.4', '4.5', '4.6',
-                                    '4.7', '4.8', '4.9', '4.10', or '4.11'.
+                                    '4.7', '4.8', '4.9', '4.10', '4.11', or '4.12'.
     :param factor_num:              Numerator of factor for target frame rate.
                                     For example `factor_num=5, factor_den=2` will multiply the frame rate by 2.5.
     :param factor_den:              Denominator of factor for target frame rate.
@@ -80,11 +80,13 @@ def rife(
     if num_streams < 1:
         raise vs.Error("rife: num_streams must be at least 1")
 
-    if model not in ["4.0", "4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7", "4.8", "4.9", "4.10", "4.11"]:
-        raise vs.Error(
-            "rife: model must be '4.0', '4.1', '4.2', '4.3', '4.4', '4.5', '4.6', '4.7', '4.8', '4.9', '4.10', "
-            + "or '4.11'"
-        )
+    model_versions = [".".join(["4", str(i)]) for i in range(13)]
+
+    if model not in model_versions:
+        err = "rife: model must be "
+        for m in model_versions:
+            err += "'" + m + "', "
+        raise vs.Error(err[:-2])
 
     if factor_num < 1:
         raise vs.Error("rife: factor_num must be at least 1")
@@ -158,6 +160,8 @@ def rife(
 
             if ensemble:
                 raise vs.Error("rife: ensemble not supported")
+        case "4.12":
+            from .IFNet_HDv3_v4_12 import IFNet
 
     model_name = f"flownet_v{model}.pkl"
 
