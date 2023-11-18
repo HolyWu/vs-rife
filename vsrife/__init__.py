@@ -60,7 +60,6 @@ def rife(
     :param scale:                   Control the process resolution for optical flow model. Try scale=0.5 for 4K video.
                                     Must be 0.25, 0.5, 1.0, 2.0, or 4.0.
     :param ensemble:                Smooth predictions in areas where the estimation is uncertain.
-                                    Not supported for models after '4.6'.
     :param sc:                      Avoid interpolating frames over scene changes.
     :param sc_threshold:            Threshold for scene change detection. Must be between 0.0 and 1.0.
                                     Leave it None if the clip already has _SceneChangeNext properly set.
@@ -137,29 +136,14 @@ def rife(
             from .IFNet_HDv3_v4_6 import IFNet
         case "4.7":
             from .IFNet_HDv3_v4_7 import IFNet
-
-            if ensemble:
-                raise vs.Error("rife: ensemble not supported")
         case "4.8":
             from .IFNet_HDv3_v4_8 import IFNet
-
-            if ensemble:
-                raise vs.Error("rife: ensemble not supported")
         case "4.9":
             from .IFNet_HDv3_v4_9 import IFNet
-
-            if ensemble:
-                raise vs.Error("rife: ensemble not supported")
         case "4.10":
             from .IFNet_HDv3_v4_10 import IFNet
-
-            if ensemble:
-                raise vs.Error("rife: ensemble not supported")
         case "4.11":
             from .IFNet_HDv3_v4_11 import IFNet
-
-            if ensemble:
-                raise vs.Error("rife: ensemble not supported")
         case "4.12":
             from .IFNet_HDv3_v4_12 import IFNet
 

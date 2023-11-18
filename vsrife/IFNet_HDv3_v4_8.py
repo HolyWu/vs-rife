@@ -84,6 +84,7 @@ class IFNet(nn.Module):
             nn.ConvTranspose2d(16, 4, 4, 2, 1)
         )
         self.scale_list = [8/scale, 4/scale, 2/scale, 1/scale]
+        self.ensemble = ensemble
 
     def forward(self, img0, img1, timestep):
         f0 = self.encode(img0[:, :3])
@@ -99,8 +100,20 @@ class IFNet(nn.Module):
         for i in range(4):
             if flow is None:
                 flow, mask = block[i](torch.cat((img0[:, :3], img1[:, :3], f0, f1, timestep), 1), None, scale=self.scale_list[i])
+                if self.ensemble:
+                    f_, m_ = block[i](torch.cat((img1[:, :3], img0[:, :3], f1, f0, 1-timestep), 1), None, scale=self.scale_list[i])
+                    flow = (flow + torch.cat((f_[:, 2:4], f_[:, :2]), 1)) / 2
+                    mask = (mask + (-m_)) / 2
             else:
-                fd, mask = block[i](torch.cat((warped_img0[:, :3], warped_img1[:, :3], warp(f0, flow[:, :2]), warp(f1, flow[:, 2:4]), timestep, mask), 1), flow, scale=self.scale_list[i])
+                wf0 = warp(f0, flow[:, :2])
+                wf1 = warp(f1, flow[:, 2:4])
+                fd, m0 = block[i](torch.cat((warped_img0[:, :3], warped_img1[:, :3], wf0, wf1, timestep, mask), 1), flow, scale=self.scale_list[i])
+                if self.ensemble:
+                    f_, m_ = block[i](torch.cat((warped_img1[:, :3], warped_img0[:, :3], wf1, wf0, 1-timestep, -mask), 1), torch.cat((flow[:, 2:4], flow[:, :2]), 1), scale=self.scale_list[i])
+                    fd = (fd + torch.cat((f_[:, 2:4], f_[:, :2]), 1)) / 2
+                    mask = (m0 + (-m_)) / 2
+                else:
+                    mask = m0
                 flow = flow + fd
             mask_list.append(mask)
             flow_list.append(flow)
