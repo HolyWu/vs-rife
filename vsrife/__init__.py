@@ -19,6 +19,28 @@ os.environ["CUDA_MODULE_LOADING"] = "LAZY"
 
 model_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "models")
 
+models = [
+    "4.0",
+    "4.1",
+    "4.2",
+    "4.3",
+    "4.4",
+    "4.5",
+    "4.6",
+    "4.7",
+    "4.8",
+    "4.9",
+    "4.10",
+    "4.11",
+    "4.12",
+    "4.12.lite",
+]
+
+models_str = ""
+for model in models:
+    models_str += "'" + model + "', "
+models_str = models_str[:-2]
+
 
 @torch.inference_mode()
 def rife(
@@ -50,8 +72,7 @@ def rife(
     :param trt_cache_path:          Path for TensorRT engine file. Engine will be cached when it's built for the first
                                     time. Note each engine is created for specific settings such as model path/name,
                                     precision, workspace etc, and specific GPUs and it's not portable.
-    :param model:                   Model version to use. Must be '4.0', '4.1', '4.2', '4.3', '4.4', '4.5', '4.6',
-                                    '4.7', '4.8', '4.9', '4.10', '4.11', or '4.12'.
+    :param model:                   Model version to use.
     :param factor_num:              Numerator of factor for target frame rate.
                                     For example `factor_num=5, factor_den=2` will multiply the frame rate by 2.5.
     :param factor_den:              Denominator of factor for target frame rate.
@@ -79,13 +100,8 @@ def rife(
     if num_streams < 1:
         raise vs.Error("rife: num_streams must be at least 1")
 
-    model_versions = [".".join(["4", str(i)]) for i in range(13)]
-
-    if model not in model_versions:
-        err = "rife: model must be "
-        for m in model_versions:
-            err += "'" + m + "', "
-        raise vs.Error(err[:-2])
+    if model not in models:
+        raise vs.Error(f"rife: model must be {models_str}")
 
     if factor_num < 1:
         raise vs.Error("rife: factor_num must be at least 1")
@@ -146,6 +162,8 @@ def rife(
             from .IFNet_HDv3_v4_11 import IFNet
         case "4.12":
             from .IFNet_HDv3_v4_12 import IFNet
+        case "4.12.lite":
+            from .IFNet_HDv3_v4_12_lite import IFNet
 
     model_name = f"flownet_v{model}.pkl"
 
