@@ -34,6 +34,7 @@ models = [
     "4.11",
     "4.12",
     "4.12.lite",
+    "4.13",
     "4.13.lite",
 ]
 
@@ -165,6 +166,8 @@ def rife(
             from .IFNet_HDv3_v4_12 import IFNet
         case "4.12.lite":
             from .IFNet_HDv3_v4_12_lite import IFNet
+        case "4.13":
+            from .IFNet_HDv3_v4_13 import IFNet
         case "4.13.lite":
             from .IFNet_HDv3_v4_13_lite import IFNet
 
