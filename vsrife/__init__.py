@@ -36,6 +36,10 @@ models = [
     "4.12.lite",
     "4.13",
     "4.13.lite",
+    "4.14"
+    "4.14.lite"
+    "4.15"
+    "4.15.lite"
 ]
 
 models_str = ""
@@ -170,7 +174,15 @@ def rife(
             from .IFNet_HDv3_v4_13 import IFNet
         case "4.13.lite":
             from .IFNet_HDv3_v4_13_lite import IFNet
-
+        case "4.14":
+            from .IFNet_HDv3_v4_13_lite import IFNet
+        case "4.14.lite":
+            from .IFNet_HDv3_v4_13_lite import IFNet
+        case "4.15":
+            from .IFNet_HDv3_v4_13_lite import IFNet
+        case "4.15.lite":
+            from .IFNet_HDv3_v4_13_lite import IFNet
+            
     model_name = f"flownet_v{model}.pkl"
 
     state_dict = torch.load(os.path.join(model_dir, model_name), map_location="cpu")
