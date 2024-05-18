@@ -7,27 +7,32 @@ name = "vsrife"
 version = "4.2.0"
 description = "RIFE function for VapourSynth"
 readme = "README.md"
-requires-python = ">=3.11"
-license = {file = "LICENSE"}
-authors = [{name = "HolyWu", email = "holywu@gmail.com"}]
-keywords = ["RIFE", "VapourSynth"]
+requires-python = ">=3.10"
+license-files = { paths = ["LICENSE"] }
+authors = [
+  { name = "HolyWu", email = "holywu@gmail.com" },
+]
+keywords = [
+  "PyTorch",
+  "RIFE",
+  "TensorRT",
+  "VapourSynth",
+]
 classifiers = [
+  "Environment :: GPU :: NVIDIA CUDA",
   "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
-  "Programming Language :: Python :: 3 :: Only",
-  "Topic :: Multimedia :: Video"
+  "Programming Language :: Python :: 3",
+  "Topic :: Multimedia :: Video",
 ]
 dependencies = [
-  "numpy>=1.26.1",
-  "packaging>=23.2",
-  "requests>=2.31.0",
-  "tensorrt>=8.6.1",
-  "torch>=2.0.1",
-  "torch-tensorrt-fx-only>=1.4.0",
-  "tqdm>=4.66.1",
-  "VapourSynth>=62"
+  "numpy",
+  "requests",
+  "torch>=2.4.0.dev",
+  "tqdm",
+  "VapourSynth>=66",
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/HolyWu/vs-rife"
-"Bug Tracker" = "https://github.com/HolyWu/vs-rife/issues"
+Homepage = "https://github.com/HolyWu/vs-rife"
+Issues = "https://github.com/HolyWu/vs-rife/issues"

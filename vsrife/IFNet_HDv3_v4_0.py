@@ -34,7 +34,7 @@ class IFBlock(nn.Module):
     def forward(self, x, flow=None, scale=1):
         x = F.interpolate(x, scale_factor= 1. / scale, mode="bilinear")
         if flow is not None:
-            flow = F.interpolate(flow, scale_factor= 1. / scale, mode="bilinear") * 1. / scale
+            flow = F.interpolate(flow, scale_factor= 1. / scale, mode="bilinear") / scale
             x = torch.cat((x, flow), 1)
         feat = self.conv0(x)
         feat = self.convblock(feat) + feat

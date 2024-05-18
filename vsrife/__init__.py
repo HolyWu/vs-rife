@@ -1,21 +1,24 @@
 from __future__ import annotations
 
+import math
 import os
+import warnings
 from fractions import Fraction
 from threading import Lock
 
 import numpy as np
-import tensorrt
 import torch
 import torch.nn.functional as F
 import vapoursynth as vs
-from torch_tensorrt.fx import LowerSetting
-from torch_tensorrt.fx.lower import Lowerer
-from torch_tensorrt.fx.utils import LowerPrecision
 
 __version__ = "4.2.0"
 
 os.environ["CUDA_MODULE_LOADING"] = "LAZY"
+
+warnings.filterwarnings("ignore", "At pre-dispatch tracing")
+warnings.filterwarnings("ignore", "Attempted to insert a get_attr Node with no underlying reference")
+warnings.filterwarnings("ignore", "Node _run_on_acc_0_engine target _run_on_acc_0_engine _run_on_acc_0_engine of")
+warnings.filterwarnings("ignore", "The given NumPy array is not writable")
 
 model_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "models")
 
@@ -36,6 +39,11 @@ models = [
     "4.12.lite",
     "4.13",
     "4.13.lite",
+    "4.14",
+    "4.14.lite",
+    "4.15",
+    "4.15.lite",
+    "4.16.lite",
 ]
 
 models_str = ""
@@ -47,12 +55,9 @@ models_str = models_str[:-2]
 @torch.inference_mode()
 def rife(
     clip: vs.VideoNode,
-    device_index: int | None = None,
+    device_index: int = 0,
     num_streams: int = 2,
-    trt: bool = False,
-    trt_max_workspace_size: int = 1 << 30,
-    trt_cache_path: str = model_dir,
-    model: str = "4.6",
+    model: str = "4.15.lite",
     factor_num: int = 2,
     factor_den: int = 1,
     fps_num: int | None = None,
@@ -61,6 +66,12 @@ def rife(
     ensemble: bool = False,
     sc: bool = True,
     sc_threshold: float | None = None,
+    trt: bool = False,
+    trt_debug: bool = False,
+    trt_workspace_size: int = 0,
+    trt_max_aux_streams: int | None = None,
+    trt_optimization_level: int | None = None,
+    trt_cache_dir: str = model_dir,
 ) -> vs.VideoNode:
     """Real-Time Intermediate Flow Estimation for Video Frame Interpolation
 
@@ -68,24 +79,33 @@ def rife(
                                     RGBH performs inference in FP16 mode while RGBS performs inference in FP32 mode.
     :param device_index:            Device ordinal of the GPU.
     :param num_streams:             Number of CUDA streams to enqueue the kernels.
-    :param trt:                     Use TensorRT for high-performance inference.
-                                    Not supported for '4.0' and '4.1' models.
-    :param trt_max_workspace_size:  Maximum workspace size for TensorRT engine.
-    :param trt_cache_path:          Path for TensorRT engine file. Engine will be cached when it's built for the first
-                                    time. Note each engine is created for specific settings such as model path/name,
-                                    precision, workspace etc, and specific GPUs and it's not portable.
-    :param model:                   Model version to use.
+    :param model:                   Model to use.
     :param factor_num:              Numerator of factor for target frame rate.
-                                    For example `factor_num=5, factor_den=2` will multiply the frame rate by 2.5.
     :param factor_den:              Denominator of factor for target frame rate.
-    :param fps_num:                 Numerator of target frame rate. Override `factor_num` and `factor_den` if specified.
+                                    For example `factor_num=5, factor_den=2` will multiply the frame rate by 2.5.
+    :param fps_num:                 Numerator of target frame rate.
     :param fps_den:                 Denominator of target frame rate.
+                                    Override `factor_num` and `factor_den` if specified.
     :param scale:                   Control the process resolution for optical flow model. Try scale=0.5 for 4K video.
                                     Must be 0.25, 0.5, 1.0, 2.0, or 4.0.
     :param ensemble:                Smooth predictions in areas where the estimation is uncertain.
     :param sc:                      Avoid interpolating frames over scene changes.
     :param sc_threshold:            Threshold for scene change detection. Must be between 0.0 and 1.0.
-                                    Leave it None if the clip already has _SceneChangeNext properly set.
+                                    Leave the argument as None if the frames already have _SceneChangeNext property set.
+    :param trt:                     Use TensorRT for high-performance inference.
+                                    Not supported for '4.0' and '4.1' models.
+    :param trt_debug:               Print out verbose debugging information.
+    :param trt_workspace_size:      Size constraints of workspace memory pool.
+    :param trt_max_aux_streams:     Maximum number of auxiliary streams per inference stream that TRT is allowed to use
+                                    to run kernels in parallel if the network contains ops that can run in parallel,
+                                    with the cost of more memory usage. Set this to 0 for optimal memory usage.
+                                    (default = using heuristics)
+    :param trt_optimization_level:  Builder optimization level. Higher level allows TensorRT to spend more building time
+                                    for more optimization options. Valid values include integers from 0 to the maximum
+                                    optimization level, which is currently 5. (default is 3)
+    :param trt_cache_dir:           Directory for TensorRT engine file. Engine will be cached when it's built for the
+                                    first time. Note each engine is created for specific settings such as model
+                                    path/name, precision, workspace etc, and specific GPUs and it's not portable.
     """
     if not isinstance(clip, vs.VideoNode):
         raise vs.Error("rife: this is not a clip")
@@ -129,8 +149,7 @@ def rife(
     torch.set_float32_matmul_precision("high")
 
     fp16 = clip.format.bits_per_sample == 16
-    if fp16:
-        torch.set_default_dtype(torch.half)
+    dtype = torch.half if fp16 else torch.float
 
     device = torch.device("cuda", device_index)
 
@@ -170,73 +189,86 @@ def rife(
             from .IFNet_HDv3_v4_13 import IFNet
         case "4.13.lite":
             from .IFNet_HDv3_v4_13_lite import IFNet
+        case "4.14":
+            from .IFNet_HDv3_v4_14 import IFNet
+        case "4.14.lite":
+            from .IFNet_HDv3_v4_14_lite import IFNet
+        case "4.15":
+            from .IFNet_HDv3_v4_15 import IFNet
+        case "4.15.lite":
+            from .IFNet_HDv3_v4_15_lite import IFNet
+        case "4.16.lite":
+            from .IFNet_HDv3_v4_16_lite import IFNet
 
     model_name = f"flownet_v{model}.pkl"
 
-    state_dict = torch.load(os.path.join(model_dir, model_name), map_location="cpu")
+    state_dict = torch.load(os.path.join(model_dir, model_name), map_location=device)
     state_dict = {k.replace("module.", ""): v for k, v in state_dict.items() if "module." in k}
 
     flownet = IFNet(scale, ensemble)
     flownet.load_state_dict(state_dict, strict=False)
-    flownet.eval().to(device, memory_format=torch.channels_last)
-
-    w = clip.width
-    h = clip.height
-    tmp = max(128, int(128 / scale))
-    pw = ((w - 1) // tmp + 1) * tmp
-    ph = ((h - 1) // tmp + 1) * tmp
-    padding = (0, pw - w, 0, ph - h)
-
-    if trt:
-        device_name = torch.cuda.get_device_name(device)
-        trt_version = tensorrt.__version__
-        dimensions = f"{pw}x{ph}"
-        precision = "fp16" if fp16 else "fp32"
-        trt_engine_path = os.path.join(
-            os.path.realpath(trt_cache_path),
-            (
-                f"{model_name}"
-                + f"_{device_name}"
-                + f"_trt-{trt_version}"
-                + f"_{dimensions}"
-                + f"_{precision}"
-                + f"_workspace-{trt_max_workspace_size}"
-                + f"_scale-{scale}"
-                + f"_ensemble-{ensemble}"
-                + ".pt"
-            ),
-        )
-
-        if not os.path.isfile(trt_engine_path):
-            lower_setting = LowerSetting(
-                lower_precision=LowerPrecision.FP16 if fp16 else LowerPrecision.FP32,
-                min_acc_module_size=1,
-                max_workspace_size=trt_max_workspace_size,
-                dynamic_batch=False,
-                tactic_sources=1 << int(tensorrt.TacticSource.EDGE_MASK_CONVOLUTIONS)
-                | 1 << int(tensorrt.TacticSource.JIT_CONVOLUTIONS),
-            )
-            lowerer = Lowerer.create(lower_setting=lower_setting)
-            flownet = lowerer(
-                flownet,
-                [
-                    torch.zeros((1, 3, ph, pw), device=device).to(memory_format=torch.channels_last),
-                    torch.zeros((1, 3, ph, pw), device=device).to(memory_format=torch.channels_last),
-                    torch.zeros((1, 1, ph, pw), device=device).to(memory_format=torch.channels_last),
-                ],
-            )
-            torch.save(flownet, trt_engine_path)
-
-        del flownet
-        torch.cuda.empty_cache()
-        flownet = [torch.load(trt_engine_path) for _ in range(num_streams)]
+    flownet.eval().to(device)
+    if fp16:
+        flownet.half()
 
     if fps_num is not None and fps_den is not None:
         factor = Fraction(fps_num, fps_den) / clip.fps
         factor_num, factor_den = factor.as_integer_ratio()
 
+    w = clip.width
+    h = clip.height
+    tmp = max(128, int(128 / scale))
+    pw = math.ceil(w / tmp) * tmp
+    ph = math.ceil(h / tmp) * tmp
+    padding = (0, pw - w, 0, ph - h)
+
     if sc_threshold is not None:
         clip = sc_detect(clip, sc_threshold)
+
+    if trt:
+        import tensorrt
+        import torch_tensorrt
+
+        trt_engine_path = os.path.join(
+            os.path.realpath(trt_cache_dir),
+            (
+                f"{model_name}"
+                + f"_{pw}x{ph}"
+                + f"_{"fp16" if fp16 else "fp32"}"
+                + f"_scale-{scale}"
+                + f"_ensemble-{ensemble}"
+                + f"_{torch.cuda.get_device_name(device)}"
+                + f"_trt-{tensorrt.__version__}"
+                + (f"_workspace-{trt_workspace_size}" if trt_workspace_size > 0 else "")
+                + (f"_aux-{trt_max_aux_streams}" if trt_max_aux_streams is not None else "")
+                + (f"_level-{trt_optimization_level}" if trt_optimization_level is not None else "")
+                + ".ep"
+            ),
+        )
+
+        if not os.path.isfile(trt_engine_path):
+            inputs = [
+                torch.zeros((1, 3, ph, pw), dtype=dtype, device=device),
+                torch.zeros((1, 3, ph, pw), dtype=dtype, device=device),
+                torch.zeros((1, 1, ph, pw), dtype=dtype, device=device),
+            ]
+
+            flownet = torch_tensorrt.compile(
+                flownet,
+                ir="dynamo",
+                inputs=inputs,
+                enabled_precisions={dtype},
+                debug=trt_debug,
+                workspace_size=trt_workspace_size,
+                min_block_size=1,
+                max_aux_streams=trt_max_aux_streams,
+                optimization_level=trt_optimization_level,
+                device=device,
+            )
+
+            torch_tensorrt.save(flownet, trt_engine_path, inputs=inputs)
+
+        flownet = [torch.export.load(trt_engine_path).module() for _ in range(num_streams)]
 
     index = -1
     index_lock = Lock()
@@ -259,8 +291,7 @@ def rife(
             img0 = F.pad(img0, padding)
             img1 = F.pad(img1, padding)
 
-            timestep = torch.full((1, 1, img0.shape[2], img0.shape[3]), remainder / factor_num, device=device)
-            timestep = timestep.to(memory_format=torch.channels_last)
+            timestep = torch.full((1, 1, ph, pw), remainder / factor_num, dtype=dtype, device=device)
 
             if trt:
                 output = flownet[local_index](img0, img1, timestep)
@@ -293,12 +324,15 @@ def sc_detect(clip: vs.VideoNode, threshold: float) -> vs.VideoNode:
 
 
 def frame_to_tensor(frame: vs.VideoFrame, device: torch.device) -> torch.Tensor:
-    array = np.stack([np.asarray(frame[plane]) for plane in range(frame.format.num_planes)])
-    return torch.from_numpy(array).unsqueeze(0).to(device, memory_format=torch.channels_last).clamp(0.0, 1.0)
+    return (
+        torch.stack([torch.from_numpy(np.asarray(frame[plane])).to(device) for plane in range(frame.format.num_planes)])
+        .unsqueeze(0)
+        .clamp(0.0, 1.0)
+    )
 
 
 def tensor_to_frame(tensor: torch.Tensor, frame: vs.VideoFrame) -> vs.VideoFrame:
     array = tensor.squeeze(0).detach().cpu().numpy()
     for plane in range(frame.format.num_planes):
-        np.copyto(np.asarray(frame[plane]), array[plane, :, :])
+        np.copyto(np.asarray(frame[plane]), array[plane])
     return frame

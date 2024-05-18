@@ -1,10 +1,9 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
+from .interpolate import interpolate
 from .warplayer import warp
 
-torch.fx.wrap('warp')
 
 def conv(in_planes, out_planes, kernel_size=3, stride=1, padding=1, dilation=1):
     return nn.Sequential(
@@ -12,19 +11,6 @@ def conv(in_planes, out_planes, kernel_size=3, stride=1, padding=1, dilation=1):
                   padding=padding, dilation=dilation, bias=True),
         nn.LeakyReLU(0.2, True)
     )
-
-class MyPixelShuffle(nn.Module):
-    def __init__(self, upscale_factor):
-        super(MyPixelShuffle, self).__init__()
-        self.upscale_factor = upscale_factor
-
-    def forward(self, input):
-        b, c, hh, hw = input.size()
-        out_channel = c // (self.upscale_factor**2)
-        h = hh * self.upscale_factor
-        w = hw * self.upscale_factor
-        x_view = input.view(b, out_channel, self.upscale_factor, self.upscale_factor, hh, hw)
-        return x_view.permute(0, 1, 4, 2, 5, 3).reshape(b, out_channel, h, w)
 
 class ResConv(nn.Module):
     def __init__(self, c, dilation=1):
@@ -56,18 +42,18 @@ class IFBlock(nn.Module):
         )
         self.lastconv = nn.Sequential(
             nn.ConvTranspose2d(c, 4*6, 4, 2, 1),
-            MyPixelShuffle(2)
+            nn.PixelShuffle(2)
         )
 
     def forward(self, x, flow=None, scale=1):
-        x = F.interpolate(x, scale_factor= 1. / scale, mode="bilinear")
+        x = interpolate(x, scale_factor= 1. / scale, mode="bilinear")
         if flow is not None:
-            flow = F.interpolate(flow, scale_factor= 1. / scale, mode="bilinear") * 1. / scale
+            flow = interpolate(flow, scale_factor= 1. / scale, mode="bilinear") / scale
             x = torch.cat((x, flow), 1)
         feat = self.conv0(x)
         feat = self.convblock(feat)
         tmp = self.lastconv(feat)
-        tmp = F.interpolate(tmp, scale_factor=scale, mode="bilinear")
+        tmp = interpolate(tmp, scale_factor=scale, mode="bilinear")
         flow = tmp[:, :4] * scale
         mask = tmp[:, 4:5]
         return flow, mask
