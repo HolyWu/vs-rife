@@ -234,7 +234,7 @@ def rife(
             (
                 f"{model_name}"
                 + f"_{pw}x{ph}"
-                + f"_{"fp16" if fp16 else "fp32"}"
+                + f"_{'fp16' if fp16 else 'fp32'}"
                 + f"_scale-{scale}"
                 + f"_ensemble-{ensemble}"
                 + f"_{torch.cuda.get_device_name(device)}"
