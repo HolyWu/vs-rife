@@ -205,11 +205,12 @@ def rife(
 
     model_name = f"flownet_v{model}.pkl"
 
-    state_dict = torch.load(os.path.join(model_dir, model_name), map_location=device)
+    state_dict = torch.load(os.path.join(model_dir, model_name), map_location=device, mmap=True)
     state_dict = {k.replace("module.", ""): v for k, v in state_dict.items() if "module." in k}
 
-    flownet = IFNet(scale, ensemble)
-    flownet.load_state_dict(state_dict, strict=False)
+    with torch.device("meta"):
+        flownet = IFNet(scale, ensemble)
+    flownet.load_state_dict(state_dict, strict=False, assign=True)
     flownet.eval().to(device)
     if fp16:
         flownet.half()
