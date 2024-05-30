@@ -221,7 +221,7 @@ def rife(
 
     w = clip.width
     h = clip.height
-    tmp = max(128, int(128 / scale))
+    tmp = max(32, int(32 / scale))
     pw = math.ceil(w / tmp) * tmp
     ph = math.ceil(h / tmp) * tmp
     padding = (0, pw - w, 0, ph - h)
