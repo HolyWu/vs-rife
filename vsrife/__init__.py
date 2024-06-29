@@ -70,6 +70,9 @@ def rife(
     sc_threshold: float | None = None,
     trt: bool = False,
     trt_debug: bool = False,
+    trt_min_shape: list[int] = [128, 128],
+    trt_opt_shape: list[int] = [1920, 1080],
+    trt_max_shape: list[int] = [1920, 1080],
     trt_workspace_size: int = 0,
     trt_max_aux_streams: int | None = None,
     trt_optimization_level: int | None = None,
@@ -97,6 +100,9 @@ def rife(
     :param trt:                     Use TensorRT for high-performance inference.
                                     Not supported for '4.0' and '4.1' models.
     :param trt_debug:               Print out verbose debugging information.
+    :param trt_min_shape:           Min size of dynamic shapes.
+    :param trt_opt_shape:           Opt size of dynamic shapes.
+    :param trt_max_shape:           Max size of dynamic shapes.
     :param trt_workspace_size:      Size constraints of workspace memory pool.
     :param trt_max_aux_streams:     Maximum number of auxiliary streams per inference stream that TRT is allowed to use
                                     to run kernels in parallel if the network contains ops that can run in parallel,
@@ -144,6 +150,18 @@ def rife(
 
     if scale not in [0.25, 0.5, 1.0, 2.0, 4.0]:
         raise vs.Error("rife: scale must be 0.25, 0.5, 1.0, 2.0, or 4.0")
+
+    if not isinstance(trt_min_shape, list) or len(trt_min_shape) != 2:
+        raise vs.Error("rife: trt_min_shape must be a list with 2 items")
+
+    if not isinstance(trt_opt_shape, list) or len(trt_opt_shape) != 2:
+        raise vs.Error("rife: trt_opt_shape must be a list with 2 items")
+
+    if not isinstance(trt_max_shape, list) or len(trt_max_shape) != 2:
+        raise vs.Error("rife: trt_max_shape must be a list with 2 items")
+
+    if any(trt_min_shape[i] >= trt_max_shape[i] for i in range(2)):
+        raise vs.Error("rife: trt_min_shape must be less than trt_max_shape")
 
     if os.path.getsize(os.path.join(model_dir, "flownet_v4.0.pkl")) == 0:
         raise vs.Error("rife: model files have not been downloaded. run 'python -m vsrife' first")
@@ -229,6 +247,12 @@ def rife(
     ph = math.ceil(h / tmp) * tmp
     padding = (0, pw - w, 0, ph - h)
 
+    tenFlow_div = torch.tensor([(pw - 1.0) / 2.0, (ph - 1.0) / 2.0], dtype=dtype, device=device)
+
+    tenHorizontal = torch.linspace(-1.0, 1.0, pw, dtype=dtype, device=device).view(1, 1, 1, pw).expand(-1, -1, ph, -1)
+    tenVertical = torch.linspace(-1.0, 1.0, ph, dtype=dtype, device=device).view(1, 1, ph, 1).expand(-1, -1, -1, pw)
+    backwarp_tenGrid = torch.cat([tenHorizontal, tenVertical], 1)
+
     if sc_threshold is not None:
         clip = sc_detect(clip, sc_threshold)
 
@@ -236,11 +260,22 @@ def rife(
         import tensorrt
         import torch_tensorrt
 
+        for i in range(2):
+            trt_min_shape[i] = math.ceil(max(trt_min_shape[i], 1) / tmp) * tmp
+            trt_opt_shape[i] = math.ceil(max(trt_opt_shape[i], 1) / tmp) * tmp
+            trt_max_shape[i] = math.ceil(max(trt_max_shape[i], 1) / tmp) * tmp
+
+        dimensions = (
+            f"min-{trt_min_shape[0]}x{trt_min_shape[1]}"
+            f"_opt-{trt_opt_shape[0]}x{trt_opt_shape[1]}"
+            f"_max-{trt_max_shape[0]}x{trt_max_shape[1]}"
+        )
+
         trt_engine_path = os.path.join(
             os.path.realpath(trt_cache_dir),
             (
                 f"{model_name}"
-                + f"_{pw}x{ph}"
+                + f"_{dimensions}"
                 + f"_{'fp16' if fp16 else 'fp32'}"
                 + f"_scale-{scale}"
                 + f"_ensemble-{ensemble}"
@@ -249,21 +284,72 @@ def rife(
                 + (f"_workspace-{trt_workspace_size}" if trt_workspace_size > 0 else "")
                 + (f"_aux-{trt_max_aux_streams}" if trt_max_aux_streams is not None else "")
                 + (f"_level-{trt_optimization_level}" if trt_optimization_level is not None else "")
-                + ".ep"
+                + ".ts"
             ),
         )
 
         if not os.path.isfile(trt_engine_path):
+            trt_min_shape.reverse()
+            trt_opt_shape.reverse()
+            trt_max_shape.reverse()
+
             inputs = [
-                torch.zeros((1, 3, ph, pw), dtype=dtype, device=device),
-                torch.zeros((1, 3, ph, pw), dtype=dtype, device=device),
-                torch.zeros((1, 1, ph, pw), dtype=dtype, device=device),
+                torch_tensorrt.Input(
+                    min_shape=[1, 3] + trt_min_shape,
+                    opt_shape=[1, 3] + trt_opt_shape,
+                    max_shape=[1, 3] + trt_max_shape,
+                    dtype=dtype,
+                    name="img0",
+                ),
+                torch_tensorrt.Input(
+                    min_shape=[1, 3] + trt_min_shape,
+                    opt_shape=[1, 3] + trt_opt_shape,
+                    max_shape=[1, 3] + trt_max_shape,
+                    dtype=dtype,
+                    name="img1",
+                ),
+                torch_tensorrt.Input(
+                    min_shape=[1, 1] + trt_min_shape,
+                    opt_shape=[1, 1] + trt_opt_shape,
+                    max_shape=[1, 1] + trt_max_shape,
+                    dtype=dtype,
+                    name="timestep",
+                ),
+                torch_tensorrt.Input(
+                    min_shape=[2],
+                    opt_shape=[2],
+                    max_shape=[2],
+                    dtype=dtype,
+                    name="tenFlow_div",
+                ),
+                torch_tensorrt.Input(
+                    min_shape=[1, 2] + trt_min_shape,
+                    opt_shape=[1, 2] + trt_opt_shape,
+                    max_shape=[1, 2] + trt_max_shape,
+                    dtype=dtype,
+                    name="backwarp_tenGrid",
+                ),
             ]
 
-            flownet = torch_tensorrt.compile(
-                flownet,
-                ir="dynamo",
-                inputs=inputs,
+            example_tensors = tuple(i.example_tensor("opt_shape").to(device) for i in inputs)
+
+            _height = torch.export.Dim("height", min=trt_min_shape[0] // tmp, max=trt_max_shape[0] // tmp)
+            _width = torch.export.Dim("width", min=trt_min_shape[1] // tmp, max=trt_max_shape[1] // tmp)
+            dim_height = _height * tmp
+            dim_width = _width * tmp
+            dynamic_shapes = {
+                "img0": {2: dim_height, 3: dim_width},
+                "img1": {2: dim_height, 3: dim_width},
+                "timestep": {2: dim_height, 3: dim_width},
+                "tenFlow_div": {0: None},
+                "backwarp_tenGrid": {2: dim_height, 3: dim_width},
+            }
+
+            exported_program = torch.export.export(flownet, example_tensors, dynamic_shapes=dynamic_shapes)
+
+            flownet = torch_tensorrt.dynamo.compile(
+                exported_program,
+                inputs,
                 enabled_precisions={dtype},
                 debug=trt_debug,
                 workspace_size=trt_workspace_size,
@@ -271,11 +357,12 @@ def rife(
                 max_aux_streams=trt_max_aux_streams,
                 optimization_level=trt_optimization_level,
                 device=device,
+                assume_dynamic_shape_support=True,
             )
 
-            torch_tensorrt.save(flownet, trt_engine_path, inputs=inputs)
+            torch_tensorrt.save(flownet, trt_engine_path, output_format="torchscript", inputs=example_tensors)
 
-        flownet = [torch.export.load(trt_engine_path).module() for _ in range(num_streams)]
+        flownet = [torch.jit.load(trt_engine_path).eval() for _ in range(num_streams)]
 
     index = -1
     index_lock = Lock()
@@ -301,9 +388,9 @@ def rife(
             timestep = torch.full((1, 1, ph, pw), remainder / factor_num, dtype=dtype, device=device)
 
             if trt:
-                output = flownet[local_index](img0, img1, timestep)
+                output = flownet[local_index](img0, img1, timestep, tenFlow_div, backwarp_tenGrid)
             else:
-                output = flownet(img0, img1, timestep)
+                output = flownet(img0, img1, timestep, tenFlow_div, backwarp_tenGrid)
 
             return tensor_to_frame(output[:, :, :h, :w], f[0].copy())
 

@@ -12,6 +12,19 @@ def conv(in_planes, out_planes, kernel_size=3, stride=1, padding=1, dilation=1):
         nn.LeakyReLU(0.2, True)
     )
 
+class MyPixelShuffle(nn.Module):
+    def __init__(self, upscale_factor):
+        super(MyPixelShuffle, self).__init__()
+        self.upscale_factor = upscale_factor
+
+    def forward(self, x):
+        b, c, hh, hw = x.size()
+        out_channel = c // (self.upscale_factor**2)
+        h = hh * self.upscale_factor
+        w = hw * self.upscale_factor
+        x_view = x.view(b, out_channel, self.upscale_factor, self.upscale_factor, hh, hw)
+        return x_view.permute(0, 1, 4, 2, 5, 3).reshape(b, out_channel, h, w)
+
 class ResConv(nn.Module):
     def __init__(self, c, dilation=1):
         super(ResConv, self).__init__()
@@ -42,7 +55,7 @@ class IFBlock(nn.Module):
         )
         self.lastconv = nn.Sequential(
             nn.ConvTranspose2d(c, 4*5, 4, 2, 1),
-            nn.PixelShuffle(2)
+            MyPixelShuffle(2)
         )
 
     def forward(self, x, flow=None, scale=1):
@@ -68,7 +81,7 @@ class IFNet(nn.Module):
         self.scale_list = [8/scale, 4/scale, 2/scale, 1/scale]
         self.ensemble = ensemble
 
-    def forward(self, img0, img1, timestep):
+    def forward(self, img0, img1, timestep, tenFlow_div, backwarp_tenGrid):
         flow_list = []
         merged = []
         mask_list = []
@@ -94,8 +107,8 @@ class IFNet(nn.Module):
                 mask = mask + m0
             mask_list.append(mask)
             flow_list.append(flow)
-            warped_img0 = warp(img0, flow[:, :2])
-            warped_img1 = warp(img1, flow[:, 2:4])
+            warped_img0 = warp(img0, flow[:, :2], tenFlow_div, backwarp_tenGrid)
+            warped_img1 = warp(img1, flow[:, 2:4], tenFlow_div, backwarp_tenGrid)
             merged.append((warped_img0, warped_img1))
         mask_list[3] = torch.sigmoid(mask_list[3])
         return merged[3][0] * mask_list[3] + merged[3][1] * (1 - mask_list[3])

@@ -11,9 +11,8 @@ from torch.library import custom_op, register_fake
 from torch_tensorrt.dynamo._SourceIR import SourceIR
 from torch_tensorrt.dynamo.conversion._ConversionContext import ConversionContext
 from torch_tensorrt.dynamo.conversion._ConverterRegistry import dynamo_tensorrt_converter
-from torch_tensorrt.dynamo.conversion.converter_utils import enforce_tensor_types
-from torch_tensorrt.fx.converters.converter_utils import set_layer_name
-from torch_tensorrt.fx.types import TRTTensor
+from torch_tensorrt.dynamo.conversion.converter_utils import enforce_tensor_types, set_layer_name
+from torch_tensorrt.dynamo.types import TRTTensor
 
 
 @custom_op("vsrife::upsample_nearest1d", mutates_args=())
@@ -153,7 +152,7 @@ def upsample(
 
     if size is not None:
         layer.shape = list(input.shape)[:2] + list(size)
-    elif scale_factor is not None:
+    else:
         layer.scales = [1.0, 1.0] + list(scale_factor)
 
     if mode == "nearest":
@@ -179,7 +178,7 @@ def upsample(
 
 
 def args_bounds_check(args: Tuple[Argument, ...], i: int, replacement: Optional[Any] = None) -> Any:
-    return args[i] if len(args) > i else replacement
+    return args[i] if len(args) > i and args[i] is not None else replacement
 
 
 @dynamo_tensorrt_converter(torch.ops.vsrife.upsample_nearest1d.default)
@@ -202,7 +201,7 @@ def ops_upsample_nearest(
         target,
         SourceIR.ATEN,
         name,
-        input=args[0],
+        args[0],
         size=args_bounds_check(args, 1),
         scale_factor=args_bounds_check(args, 2),
         mode="nearest",
@@ -230,11 +229,11 @@ def ops_upsample_linear(
         target,
         SourceIR.ATEN,
         name,
-        input=args[0],
+        args[0],
         size=args_bounds_check(args, 1),
         scale_factor=args_bounds_check(args, 3),
         mode="linear",
-        align_corners=args_bounds_check(args, 2),
+        align_corners=args[2],
     )
 
 
@@ -256,11 +255,11 @@ def ops_upsample_bicubic(
         target,
         SourceIR.ATEN,
         name,
-        input=args[0],
+        args[0],
         size=args_bounds_check(args, 1),
         scale_factor=args_bounds_check(args, 3),
         mode="bicubic",
-        align_corners=args_bounds_check(args, 2),
+        align_corners=args[2],
     )
 
 

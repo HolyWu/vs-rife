@@ -54,7 +54,7 @@ class IFNet(nn.Module):
         self.scale = scale
         self.ensemble = ensemble
 
-    def forward(self, img0, img1, timestep):
+    def forward(self, img0, img1, timestep, tenFlow_div, backwarp_tenGrid):
         scale_list = [8/self.scale, 4/self.scale, 2/self.scale, 1/self.scale]
         flow_list = []
         merged = []
@@ -77,8 +77,8 @@ class IFNet(nn.Module):
                     for k in range(4):
                         scale_list[k] *= 2
                     flow, mask = block[0](torch.cat((img0[:, :3], img1[:, :3], timestep), 1), None, scale=scale_list[0])
-                    warped_img0 = warp(img0, flow[:, :2])
-                    warped_img1 = warp(img1, flow[:, 2:4])
+                    warped_img0 = warp(img0, flow[:, :2], tenFlow_div, backwarp_tenGrid)
+                    warped_img1 = warp(img1, flow[:, 2:4], tenFlow_div, backwarp_tenGrid)
                     f0, m0 = block[i](torch.cat((warped_img0[:, :3], warped_img1[:, :3], timestep, mask), 1), flow, scale=scale_list[i])
                 if self.ensemble:
                     f1, m1 = block[i](torch.cat((warped_img1[:, :3], warped_img0[:, :3], 1-timestep, -mask), 1), torch.cat((flow[:, 2:4], flow[:, :2]), 1), scale=scale_list[i])
@@ -88,8 +88,8 @@ class IFNet(nn.Module):
                 mask = mask + m0
             mask_list.append(mask)
             flow_list.append(flow)
-            warped_img0 = warp(img0, flow[:, :2])
-            warped_img1 = warp(img1, flow[:, 2:4])
+            warped_img0 = warp(img0, flow[:, :2], tenFlow_div, backwarp_tenGrid)
+            warped_img1 = warp(img1, flow[:, 2:4], tenFlow_div, backwarp_tenGrid)
             merged.append((warped_img0, warped_img1))
         mask_list[3] = torch.sigmoid(mask_list[3])
         return merged[3][0] * mask_list[3] + merged[3][1] * (1 - mask_list[3])
