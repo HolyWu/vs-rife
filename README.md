@@ -9,11 +9,11 @@ Real-Time Intermediate Flow Estimation for Video Frame Interpolation, based on h
 
 `trt` requires additional Python packages:
 - [TensorRT](https://developer.nvidia.com/tensorrt/) 10.0.1
-- [Torch-TensorRT](https://pytorch.org/TensorRT/) 2.4.0.dev
+- [Torch-TensorRT](https://pytorch.org/TensorRT/) 2.5.0.dev
 
 To install TensorRT, run `pip install tensorrt==10.0.1 tensorrt-cu12_bindings==10.0.1 tensorrt-cu12_libs==10.0.1 --extra-index-url https://pypi.nvidia.com`
 
-To install Torch-TensorRT, Windows users can pip install the whl file on [Releases](https://github.com/HolyWu/vs-rife/releases). Linux users can run `pip install --pre torch_tensorrt --index-url https://download.pytorch.org/whl/nightly/cu121` (requires PyTorch nightly build).
+To install Torch-TensorRT, run `pip install --pre torch_tensorrt --index-url https://download.pytorch.org/whl/nightly/cu124`
 
 
 ## Installation
