@@ -226,7 +226,7 @@ def rife(
 
     model_name = f"flownet_v{model}.pkl"
 
-    state_dict = torch.load(os.path.join(model_dir, model_name), map_location=device, mmap=True)
+    state_dict = torch.load(os.path.join(model_dir, model_name), map_location=device, weights_only=True, mmap=True)
     state_dict = {k.replace("module.", ""): v for k, v in state_dict.items() if "module." in k}
 
     with torch.device("meta"):
@@ -293,6 +293,28 @@ def rife(
             trt_opt_shape.reverse()
             trt_max_shape.reverse()
 
+            example_tensors = (
+                torch.zeros((1, 3, ph, pw), dtype=dtype, device=device),
+                torch.zeros((1, 3, ph, pw), dtype=dtype, device=device),
+                torch.zeros((1, 1, ph, pw), dtype=dtype, device=device),
+                torch.zeros((2,), dtype=dtype, device=device),
+                torch.zeros((1, 2, ph, pw), dtype=dtype, device=device),
+            )
+
+            _height = torch.export.Dim("height", min=trt_min_shape[0] // tmp, max=trt_max_shape[0] // tmp)
+            _width = torch.export.Dim("width", min=trt_min_shape[1] // tmp, max=trt_max_shape[1] // tmp)
+            dim_height = _height * tmp
+            dim_width = _width * tmp
+            dynamic_shapes = {
+                "img0": {2: dim_height, 3: dim_width},
+                "img1": {2: dim_height, 3: dim_width},
+                "timestep": {2: dim_height, 3: dim_width},
+                "tenFlow_div": {0: None},
+                "backwarp_tenGrid": {2: dim_height, 3: dim_width},
+            }
+
+            exported_program = torch.export.export(flownet, example_tensors, dynamic_shapes=dynamic_shapes)
+
             inputs = [
                 torch_tensorrt.Input(
                     min_shape=[1, 3] + trt_min_shape,
@@ -316,9 +338,7 @@ def rife(
                     name="timestep",
                 ),
                 torch_tensorrt.Input(
-                    min_shape=[2],
-                    opt_shape=[2],
-                    max_shape=[2],
+                    shape=[2],
                     dtype=dtype,
                     name="tenFlow_div",
                 ),
@@ -330,22 +350,6 @@ def rife(
                     name="backwarp_tenGrid",
                 ),
             ]
-
-            example_tensors = tuple(i.example_tensor("opt_shape").to(device) for i in inputs)
-
-            _height = torch.export.Dim("height", min=trt_min_shape[0] // tmp, max=trt_max_shape[0] // tmp)
-            _width = torch.export.Dim("width", min=trt_min_shape[1] // tmp, max=trt_max_shape[1] // tmp)
-            dim_height = _height * tmp
-            dim_width = _width * tmp
-            dynamic_shapes = {
-                "img0": {2: dim_height, 3: dim_width},
-                "img1": {2: dim_height, 3: dim_width},
-                "timestep": {2: dim_height, 3: dim_width},
-                "tenFlow_div": {0: None},
-                "backwarp_tenGrid": {2: dim_height, 3: dim_width},
-            }
-
-            exported_program = torch.export.export(flownet, example_tensors, dynamic_shapes=dynamic_shapes)
 
             flownet = torch_tensorrt.dynamo.compile(
                 exported_program,
