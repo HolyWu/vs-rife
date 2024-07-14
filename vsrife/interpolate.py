@@ -150,10 +150,10 @@ def upsample(
 ) -> TRTTensor:
     layer = ctx.net.add_resize(input)
 
-    if size is not None:
-        layer.shape = list(input.shape)[:2] + list(size)
-    else:
+    if scale_factor is not None:
         layer.scales = [1.0, 1.0] + list(scale_factor)
+    else:
+        layer.shape = list(input.shape)[:2] + list(size)
 
     if mode == "nearest":
         layer.resize_mode = trt.InterpolationMode.NEAREST
