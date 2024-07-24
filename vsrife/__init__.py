@@ -62,7 +62,7 @@ def rife(
     clip: vs.VideoNode,
     device_index: int = 0,
     num_streams: int = 2,
-    model: str = "4.15.lite",
+    model: str = "4.18",
     factor_num: int = 2,
     factor_den: int = 1,
     fps_num: int | None = None,
