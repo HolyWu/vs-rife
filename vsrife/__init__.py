@@ -375,7 +375,10 @@ def rife(
 
             torch_tensorrt.save(flownet, trt_engine_path, output_format="torchscript", inputs=example_tensors)
 
-        flownet = [torch.jit.load(trt_engine_path).eval() for _ in range(num_streams)]
+        flownet = []
+        for i in range(num_streams):
+            with torch.cuda.stream(stream[i]):
+                flownet.append(torch.jit.load(trt_engine_path).eval())
 
     index = -1
     index_lock = Lock()
