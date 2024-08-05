@@ -49,6 +49,7 @@ models = [
     "4.18",
     "4.19",
     "4.20",
+    "4.21",
 ]
 
 models_str = ""
@@ -97,6 +98,7 @@ def rife(
     :param scale:                   Control the process resolution for optical flow model. Try scale=0.5 for 4K video.
                                     Must be 0.25, 0.5, 1.0, 2.0, or 4.0.
     :param ensemble:                Smooth predictions in areas where the estimation is uncertain.
+                                    Not supported since v4.21.
     :param sc:                      Avoid interpolating frames over scene changes.
     :param sc_threshold:            Threshold for scene change detection. Must be between 0.0 and 1.0.
                                     Leave the argument as None if the frames already have _SceneChangeNext property set.
@@ -232,6 +234,8 @@ def rife(
             from .IFNet_HDv3_v4_19 import IFNet
         case "4.20":
             from .IFNet_HDv3_v4_20 import IFNet
+        case "4.21":
+            from .IFNet_HDv3_v4_21 import IFNet
 
     model_name = f"flownet_v{model}.pkl"
 
