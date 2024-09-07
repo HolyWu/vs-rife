@@ -325,7 +325,7 @@ def rife(
                 "img0": {2: dim_height, 3: dim_width},
                 "img1": {2: dim_height, 3: dim_width},
                 "timestep": {2: dim_height, 3: dim_width},
-                "tenFlow_div": {0: None},
+                "tenFlow_div": {0: torch.export.Dim.STATIC},
                 "backwarp_tenGrid": {2: dim_height, 3: dim_width},
             }
 
