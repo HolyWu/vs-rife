@@ -377,7 +377,8 @@ def rife(
                 max_aux_streams=trt_max_aux_streams,
                 optimization_level=trt_optimization_level,
                 device=device,
-                assume_dynamic_shape_support=True,
+                cache_built_engines=False,
+                reuse_cached_engines=False,
             )
 
             torch_tensorrt.save(flownet, trt_engine_path, output_format="torchscript", inputs=example_tensors)
