@@ -159,11 +159,20 @@ def rife(
     if not isinstance(trt_min_shape, list) or len(trt_min_shape) != 2:
         raise vs.Error("rife: trt_min_shape must be a list with 2 items")
 
+    if any(trt_min_shape[i] < 1 for i in range(2)):
+        raise vs.Error("rife: trt_min_shape must be at least 1")
+
     if not isinstance(trt_opt_shape, list) or len(trt_opt_shape) != 2:
         raise vs.Error("rife: trt_opt_shape must be a list with 2 items")
 
+    if any(trt_opt_shape[i] < 1 for i in range(2)):
+        raise vs.Error("rife: trt_opt_shape must be at least 1")
+
     if not isinstance(trt_max_shape, list) or len(trt_max_shape) != 2:
         raise vs.Error("rife: trt_max_shape must be a list with 2 items")
+
+    if any(trt_max_shape[i] < 1 for i in range(2)):
+        raise vs.Error("rife: trt_max_shape must be at least 1")
 
     if any(trt_min_shape[i] >= trt_max_shape[i] for i in range(2)):
         raise vs.Error("rife: trt_min_shape must be less than trt_max_shape")
@@ -284,9 +293,9 @@ def rife(
         import torch_tensorrt
 
         for i in range(2):
-            trt_min_shape[i] = math.ceil(max(trt_min_shape[i], 1) / tmp) * tmp
-            trt_opt_shape[i] = math.ceil(max(trt_opt_shape[i], 1) / tmp) * tmp
-            trt_max_shape[i] = math.ceil(max(trt_max_shape[i], 1) / tmp) * tmp
+            trt_min_shape[i] = math.ceil(trt_min_shape[i] / tmp) * tmp
+            trt_opt_shape[i] = math.ceil(trt_opt_shape[i] / tmp) * tmp
+            trt_max_shape[i] = math.ceil(trt_max_shape[i] / tmp) * tmp
 
         dimensions = (
             f"min-{trt_min_shape[0]}x{trt_min_shape[1]}"
