@@ -90,7 +90,7 @@ class IFNet(nn.Module):
         self.encode = Head()
         self.scale_list = [8/scale, 4/scale, 2/scale, 1/scale]
         if ensemble:
-            raise ValueError("rife: ensemble is not supported in v4.21-v4.23")
+            raise ValueError("rife: ensemble is not supported in v4.23")
 
     def forward(self, img0, img1, timestep, tenFlow_div, backwarp_tenGrid):
         f0 = self.encode(img0[:, :3])

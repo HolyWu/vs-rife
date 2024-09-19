@@ -15,10 +15,10 @@ def conv(in_planes, out_planes, kernel_size=3, stride=1, padding=1, dilation=1):
 class Head(nn.Module):
     def __init__(self):
         super(Head, self).__init__()
-        self.cnn0 = nn.Conv2d(3, 32, 3, 2, 1)
-        self.cnn1 = nn.Conv2d(32, 32, 3, 1, 1)
-        self.cnn2 = nn.Conv2d(32, 32, 3, 1, 1)
-        self.cnn3 = nn.ConvTranspose2d(32, 8, 4, 2, 1)
+        self.cnn0 = nn.Conv2d(3, 16, 3, 2, 1)
+        self.cnn1 = nn.Conv2d(16, 16, 3, 1, 1)
+        self.cnn2 = nn.Conv2d(16, 16, 3, 1, 1)
+        self.cnn3 = nn.ConvTranspose2d(16, 4, 4, 2, 1)
         self.relu = nn.LeakyReLU(0.2, True)
 
     def forward(self, x, feat=False):
@@ -83,14 +83,15 @@ class IFBlock(nn.Module):
 class IFNet(nn.Module):
     def __init__(self, scale=1, ensemble=False):
         super(IFNet, self).__init__()
-        self.block0 = IFBlock(7+16, c=256)
-        self.block1 = IFBlock(8+4+16+8, c=192)
-        self.block2 = IFBlock(8+4+16+8, c=96)
-        self.block3 = IFBlock(8+4+16+8, c=48)
+        self.block0 = IFBlock(7+8, c=192)
+        self.block1 = IFBlock(8+4+8+8, c=128)
+        self.block2 = IFBlock(8+4+8+8, c=96)
+        self.block3 = IFBlock(8+4+8+8, c=64)
+        self.block4 = IFBlock(8+4+8+8, c=32)
         self.encode = Head()
-        self.scale_list = [8/scale, 4/scale, 2/scale, 1/scale]
+        self.scale_list = [16/scale, 8/scale, 4/scale, 2/scale, 1/scale]
         if ensemble:
-            raise ValueError("rife: ensemble is not supported in v4.22")
+            raise ValueError("rife: ensemble is not supported in v4.25")
 
     def forward(self, img0, img1, timestep, tenFlow_div, backwarp_tenGrid):
         f0 = self.encode(img0[:, :3])
@@ -102,8 +103,8 @@ class IFNet(nn.Module):
         warped_img1 = img1
         flow = None
         mask = None
-        block = [self.block0, self.block1, self.block2, self.block3]
-        for i in range(4):
+        block = [self.block0, self.block1, self.block2, self.block3, self.block4]
+        for i in range(5):
             if flow is None:
                 flow, mask, feat = block[i](torch.cat((img0[:, :3], img1[:, :3], f0, f1, timestep), 1), None, scale=self.scale_list[i])
             else:
