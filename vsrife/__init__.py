@@ -50,6 +50,7 @@ models = [
     "4.23",
     "4.24",
     "4.25",
+    "4.26",
 ]
 
 models_str = ""
@@ -255,6 +256,8 @@ def rife(
             from .IFNet_HDv3_v4_24 import IFNet
         case "4.25":
             from .IFNet_HDv3_v4_25 import IFNet
+        case "4.26":
+            from .IFNet_HDv3_v4_26 import IFNet
 
     model_name = f"flownet_v{model}.pkl"
 
