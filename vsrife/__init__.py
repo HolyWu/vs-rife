@@ -53,11 +53,6 @@ models = [
     "4.26",
 ]
 
-models_str = ""
-for model in models:
-    models_str += "'" + model + "', "
-models_str = models_str[:-2]
-
 
 @torch.inference_mode()
 def rife(
@@ -74,10 +69,10 @@ def rife(
     sc: bool = True,
     sc_threshold: float | None = None,
     trt: bool = False,
-    trt_debug: bool = False,
     trt_min_shape: list[int] = [128, 128],
     trt_opt_shape: list[int] = [1920, 1080],
     trt_max_shape: list[int] = [1920, 1080],
+    trt_debug: bool = False,
     trt_workspace_size: int = 0,
     trt_max_aux_streams: int | None = None,
     trt_optimization_level: int | None = None,
@@ -99,16 +94,15 @@ def rife(
     :param scale:                   Control the process resolution for optical flow model. Try scale=0.5 for 4K video.
                                     Must be 0.25, 0.5, 1.0, 2.0, or 4.0.
     :param ensemble:                Smooth predictions in areas where the estimation is uncertain.
-                                    Not supported since v4.21.
     :param sc:                      Avoid interpolating frames over scene changes.
     :param sc_threshold:            Threshold for scene change detection. Must be between 0.0 and 1.0.
                                     Leave the argument as None if the frames already have _SceneChangeNext property set.
     :param trt:                     Use TensorRT for high-performance inference.
-                                    Not supported for '4.0' and '4.1' models.
-    :param trt_debug:               Print out verbose debugging information.
+                                    Not supported in '4.0' and '4.1' models.
     :param trt_min_shape:           Min size of dynamic shapes.
     :param trt_opt_shape:           Opt size of dynamic shapes.
     :param trt_max_shape:           Max size of dynamic shapes.
+    :param trt_debug:               Print out verbose debugging information.
     :param trt_workspace_size:      Size constraints of workspace memory pool.
     :param trt_max_aux_streams:     Maximum number of auxiliary streams per inference stream that TRT is allowed to use
                                     to run kernels in parallel if the network contains ops that can run in parallel,
@@ -137,7 +131,7 @@ def rife(
         raise vs.Error("rife: num_streams must be at least 1")
 
     if model not in models:
-        raise vs.Error(f"rife: model must be {models_str}")
+        raise vs.Error(f"rife: model must be one of {models}")
 
     if factor_num < 1:
         raise vs.Error("rife: factor_num must be at least 1")
@@ -188,7 +182,7 @@ def rife(
 
     device = torch.device("cuda", device_index)
 
-    stream = [torch.cuda.Stream(device=device) for _ in range(num_streams)]
+    stream = [torch.cuda.Stream(device) for _ in range(num_streams)]
     stream_lock = [Lock() for _ in range(num_streams)]
 
     match model:
@@ -345,7 +339,7 @@ def rife(
                 "img0": {2: dim_height, 3: dim_width},
                 "img1": {2: dim_height, 3: dim_width},
                 "timestep": {2: dim_height, 3: dim_width},
-                "tenFlow_div": {0: torch.export.Dim.STATIC},
+                "tenFlow_div": {},
                 "backwarp_tenGrid": {2: dim_height, 3: dim_width},
             }
 
@@ -390,13 +384,13 @@ def rife(
             flownet = torch_tensorrt.dynamo.compile(
                 exported_program,
                 inputs,
+                device=device,
                 enabled_precisions={dtype},
                 debug=trt_debug,
                 workspace_size=trt_workspace_size,
                 min_block_size=1,
                 max_aux_streams=trt_max_aux_streams,
                 optimization_level=trt_optimization_level,
-                device=device,
             )
 
             torch_tensorrt.save(flownet, trt_engine_path, output_format="torchscript", inputs=example_tensors)
