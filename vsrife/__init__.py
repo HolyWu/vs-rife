@@ -277,7 +277,8 @@ def rife(
 
     w = clip.width
     h = clip.height
-    tmp = max(32, int(32 / scale))
+    modulo = 64 if model in ["4.25", "4.26"] else 32
+    tmp = max(modulo, int(modulo / scale))
     pw = math.ceil(w / tmp) * tmp
     ph = math.ceil(h / tmp) * tmp
     padding = (0, pw - w, 0, ph - h)
