@@ -69,6 +69,7 @@ def rife(
     sc: bool = True,
     sc_threshold: float | None = None,
     trt: bool = False,
+    trt_static_shape: bool = True,
     trt_min_shape: list[int] = [128, 128],
     trt_opt_shape: list[int] = [1920, 1080],
     trt_max_shape: list[int] = [1920, 1080],
@@ -99,9 +100,10 @@ def rife(
                                     Leave the argument as None if the frames already have _SceneChangeNext property set.
     :param trt:                     Use TensorRT for high-performance inference.
                                     Not supported in '4.0' and '4.1' models.
-    :param trt_min_shape:           Min size of dynamic shapes.
-    :param trt_opt_shape:           Opt size of dynamic shapes.
-    :param trt_max_shape:           Max size of dynamic shapes.
+    :param trt_static_shape:        Build with static or dynamic shapes.
+    :param trt_min_shape:           Min size of dynamic shapes. Ignored if trt_static_shape=True.
+    :param trt_opt_shape:           Opt size of dynamic shapes. Ignored if trt_static_shape=True.
+    :param trt_max_shape:           Max size of dynamic shapes. Ignored if trt_static_shape=True.
     :param trt_debug:               Print out verbose debugging information.
     :param trt_workspace_size:      Size constraints of workspace memory pool.
     :param trt_max_aux_streams:     Maximum number of auxiliary streams per inference stream that TRT is allowed to use
@@ -151,26 +153,27 @@ def rife(
     if scale not in [0.25, 0.5, 1.0, 2.0, 4.0]:
         raise vs.Error("rife: scale must be 0.25, 0.5, 1.0, 2.0, or 4.0")
 
-    if not isinstance(trt_min_shape, list) or len(trt_min_shape) != 2:
-        raise vs.Error("rife: trt_min_shape must be a list with 2 items")
+    if not trt_static_shape:
+        if not isinstance(trt_min_shape, list) or len(trt_min_shape) != 2:
+            raise vs.Error("rife: trt_min_shape must be a list with 2 items")
 
-    if any(trt_min_shape[i] < 1 for i in range(2)):
-        raise vs.Error("rife: trt_min_shape must be at least 1")
+        if any(trt_min_shape[i] < 1 for i in range(2)):
+            raise vs.Error("rife: trt_min_shape must be at least 1")
 
-    if not isinstance(trt_opt_shape, list) or len(trt_opt_shape) != 2:
-        raise vs.Error("rife: trt_opt_shape must be a list with 2 items")
+        if not isinstance(trt_opt_shape, list) or len(trt_opt_shape) != 2:
+            raise vs.Error("rife: trt_opt_shape must be a list with 2 items")
 
-    if any(trt_opt_shape[i] < 1 for i in range(2)):
-        raise vs.Error("rife: trt_opt_shape must be at least 1")
+        if any(trt_opt_shape[i] < 1 for i in range(2)):
+            raise vs.Error("rife: trt_opt_shape must be at least 1")
 
-    if not isinstance(trt_max_shape, list) or len(trt_max_shape) != 2:
-        raise vs.Error("rife: trt_max_shape must be a list with 2 items")
+        if not isinstance(trt_max_shape, list) or len(trt_max_shape) != 2:
+            raise vs.Error("rife: trt_max_shape must be a list with 2 items")
 
-    if any(trt_max_shape[i] < 1 for i in range(2)):
-        raise vs.Error("rife: trt_max_shape must be at least 1")
+        if any(trt_max_shape[i] < 1 for i in range(2)):
+            raise vs.Error("rife: trt_max_shape must be at least 1")
 
-    if any(trt_min_shape[i] >= trt_max_shape[i] for i in range(2)):
-        raise vs.Error("rife: trt_min_shape must be less than trt_max_shape")
+        if any(trt_min_shape[i] >= trt_max_shape[i] for i in range(2)):
+            raise vs.Error("rife: trt_min_shape must be less than trt_max_shape")
 
     if os.path.getsize(os.path.join(model_dir, "flownet_v4.0.pkl")) == 0:
         raise vs.Error("rife: model files have not been downloaded. run 'python -m vsrife' first")
@@ -290,16 +293,19 @@ def rife(
         import tensorrt
         import torch_tensorrt
 
-        for i in range(2):
-            trt_min_shape[i] = math.ceil(trt_min_shape[i] / tmp) * tmp
-            trt_opt_shape[i] = math.ceil(trt_opt_shape[i] / tmp) * tmp
-            trt_max_shape[i] = math.ceil(trt_max_shape[i] / tmp) * tmp
+        if trt_static_shape:
+            dimensions = f"{pw}x{ph}"
+        else:
+            for i in range(2):
+                trt_min_shape[i] = math.ceil(trt_min_shape[i] / tmp) * tmp
+                trt_opt_shape[i] = math.ceil(trt_opt_shape[i] / tmp) * tmp
+                trt_max_shape[i] = math.ceil(trt_max_shape[i] / tmp) * tmp
 
-        dimensions = (
-            f"min-{trt_min_shape[0]}x{trt_min_shape[1]}"
-            f"_opt-{trt_opt_shape[0]}x{trt_opt_shape[1]}"
-            f"_max-{trt_max_shape[0]}x{trt_max_shape[1]}"
-        )
+            dimensions = (
+                f"min-{trt_min_shape[0]}x{trt_min_shape[1]}"
+                f"_opt-{trt_opt_shape[0]}x{trt_opt_shape[1]}"
+                f"_max-{trt_max_shape[0]}x{trt_max_shape[1]}"
+            )
 
         trt_engine_path = os.path.join(
             os.path.realpath(trt_cache_dir),
@@ -319,67 +325,98 @@ def rife(
         )
 
         if not os.path.isfile(trt_engine_path):
-            trt_min_shape.reverse()
-            trt_opt_shape.reverse()
-            trt_max_shape.reverse()
-
-            example_tensors = (
-                torch.zeros((1, 3, ph, pw), dtype=dtype, device=device),
-                torch.zeros((1, 3, ph, pw), dtype=dtype, device=device),
-                torch.zeros((1, 1, ph, pw), dtype=dtype, device=device),
-                torch.zeros((2,), dtype=dtype, device=device),
-                torch.zeros((1, 2, ph, pw), dtype=dtype, device=device),
+            example_inputs = (
+                torch.zeros([1, 3, ph, pw], dtype=dtype, device=device),
+                torch.zeros([1, 3, ph, pw], dtype=dtype, device=device),
+                torch.zeros([1, 1, ph, pw], dtype=dtype, device=device),
+                torch.zeros([2], dtype=dtype, device=device),
+                torch.zeros([1, 2, ph, pw], dtype=dtype, device=device),
             )
 
-            _height = torch.export.Dim("height", min=trt_min_shape[0] // tmp, max=trt_max_shape[0] // tmp)
-            _width = torch.export.Dim("width", min=trt_min_shape[1] // tmp, max=trt_max_shape[1] // tmp)
-            dim_height = _height * tmp
-            dim_width = _width * tmp
-            dynamic_shapes = {
-                "img0": {2: dim_height, 3: dim_width},
-                "img1": {2: dim_height, 3: dim_width},
-                "timestep": {2: dim_height, 3: dim_width},
-                "tenFlow_div": {},
-                "backwarp_tenGrid": {2: dim_height, 3: dim_width},
-            }
+            if trt_static_shape:
+                dynamic_shapes = None
 
-            exported_program = torch.export.export(flownet, example_tensors, dynamic_shapes=dynamic_shapes)
+                inputs = [
+                    torch_tensorrt.Input(
+                        shape=[1, 3, ph, pw],
+                        dtype=dtype,
+                        name="img0",
+                    ),
+                    torch_tensorrt.Input(
+                        shape=[1, 3, ph, pw],
+                        dtype=dtype,
+                        name="img1",
+                    ),
+                    torch_tensorrt.Input(
+                        shape=[1, 1, ph, pw],
+                        dtype=dtype,
+                        name="timestep",
+                    ),
+                    torch_tensorrt.Input(
+                        shape=[2],
+                        dtype=dtype,
+                        name="tenFlow_div",
+                    ),
+                    torch_tensorrt.Input(
+                        shape=[1, 2, ph, pw],
+                        dtype=dtype,
+                        name="backwarp_tenGrid",
+                    ),
+                ]
+            else:
+                trt_min_shape.reverse()
+                trt_opt_shape.reverse()
+                trt_max_shape.reverse()
 
-            inputs = [
-                torch_tensorrt.Input(
-                    min_shape=[1, 3] + trt_min_shape,
-                    opt_shape=[1, 3] + trt_opt_shape,
-                    max_shape=[1, 3] + trt_max_shape,
-                    dtype=dtype,
-                    name="img0",
-                ),
-                torch_tensorrt.Input(
-                    min_shape=[1, 3] + trt_min_shape,
-                    opt_shape=[1, 3] + trt_opt_shape,
-                    max_shape=[1, 3] + trt_max_shape,
-                    dtype=dtype,
-                    name="img1",
-                ),
-                torch_tensorrt.Input(
-                    min_shape=[1, 1] + trt_min_shape,
-                    opt_shape=[1, 1] + trt_opt_shape,
-                    max_shape=[1, 1] + trt_max_shape,
-                    dtype=dtype,
-                    name="timestep",
-                ),
-                torch_tensorrt.Input(
-                    shape=[2],
-                    dtype=dtype,
-                    name="tenFlow_div",
-                ),
-                torch_tensorrt.Input(
-                    min_shape=[1, 2] + trt_min_shape,
-                    opt_shape=[1, 2] + trt_opt_shape,
-                    max_shape=[1, 2] + trt_max_shape,
-                    dtype=dtype,
-                    name="backwarp_tenGrid",
-                ),
-            ]
+                _height = torch.export.Dim("height", min=trt_min_shape[0] // tmp, max=trt_max_shape[0] // tmp)
+                _width = torch.export.Dim("width", min=trt_min_shape[1] // tmp, max=trt_max_shape[1] // tmp)
+                dim_height = _height * tmp
+                dim_width = _width * tmp
+                dynamic_shapes = {
+                    "img0": {2: dim_height, 3: dim_width},
+                    "img1": {2: dim_height, 3: dim_width},
+                    "timestep": {2: dim_height, 3: dim_width},
+                    "tenFlow_div": {},
+                    "backwarp_tenGrid": {2: dim_height, 3: dim_width},
+                }
+
+                inputs = [
+                    torch_tensorrt.Input(
+                        min_shape=[1, 3] + trt_min_shape,
+                        opt_shape=[1, 3] + trt_opt_shape,
+                        max_shape=[1, 3] + trt_max_shape,
+                        dtype=dtype,
+                        name="img0",
+                    ),
+                    torch_tensorrt.Input(
+                        min_shape=[1, 3] + trt_min_shape,
+                        opt_shape=[1, 3] + trt_opt_shape,
+                        max_shape=[1, 3] + trt_max_shape,
+                        dtype=dtype,
+                        name="img1",
+                    ),
+                    torch_tensorrt.Input(
+                        min_shape=[1, 1] + trt_min_shape,
+                        opt_shape=[1, 1] + trt_opt_shape,
+                        max_shape=[1, 1] + trt_max_shape,
+                        dtype=dtype,
+                        name="timestep",
+                    ),
+                    torch_tensorrt.Input(
+                        shape=[2],
+                        dtype=dtype,
+                        name="tenFlow_div",
+                    ),
+                    torch_tensorrt.Input(
+                        min_shape=[1, 2] + trt_min_shape,
+                        opt_shape=[1, 2] + trt_opt_shape,
+                        max_shape=[1, 2] + trt_max_shape,
+                        dtype=dtype,
+                        name="backwarp_tenGrid",
+                    ),
+                ]
+
+            exported_program = torch.export.export(flownet, example_inputs, dynamic_shapes=dynamic_shapes)
 
             flownet = torch_tensorrt.dynamo.compile(
                 exported_program,
@@ -393,7 +430,7 @@ def rife(
                 optimization_level=trt_optimization_level,
             )
 
-            torch_tensorrt.save(flownet, trt_engine_path, output_format="torchscript", inputs=example_tensors)
+            torch_tensorrt.save(flownet, trt_engine_path, output_format="torchscript", inputs=example_inputs)
 
         flownet = [torch.jit.load(trt_engine_path).eval() for _ in range(num_streams)]
 
