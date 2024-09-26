@@ -94,8 +94,8 @@ class IFNet(nn.Module):
             raise ValueError("rife: ensemble is not supported in v4.26")
 
     def forward(self, img0, img1, timestep, tenFlow_div, backwarp_tenGrid):
-        f0 = self.encode(img0[:, :3])
-        f1 = self.encode(img1[:, :3])
+        f0 = self.encode(img0)
+        f1 = self.encode(img1)
         flow_list = []
         merged = []
         mask_list = []
@@ -106,11 +106,11 @@ class IFNet(nn.Module):
         block = [self.block0, self.block1, self.block2, self.block3, self.block4]
         for i in range(5):
             if flow is None:
-                flow, mask, feat = block[i](torch.cat((img0[:, :3], img1[:, :3], f0, f1, timestep), 1), None, scale=self.scale_list[i])
+                flow, mask, feat = block[i](torch.cat((img0, img1, f0, f1, timestep), 1), None, scale=self.scale_list[i])
             else:
                 wf0 = warp(f0, flow[:, :2], tenFlow_div, backwarp_tenGrid)
                 wf1 = warp(f1, flow[:, 2:4], tenFlow_div, backwarp_tenGrid)
-                fd, m0, feat = block[i](torch.cat((warped_img0[:, :3], warped_img1[:, :3], wf0, wf1, timestep, mask, feat), 1), flow, scale=self.scale_list[i])
+                fd, m0, feat = block[i](torch.cat((warped_img0, warped_img1, wf0, wf1, timestep, mask, feat), 1), flow, scale=self.scale_list[i])
                 mask = m0
                 flow = flow + fd
             mask_list.append(mask)
