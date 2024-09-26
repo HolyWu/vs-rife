@@ -424,6 +424,7 @@ def rife(
                 device=device,
                 enabled_precisions={dtype},
                 debug=trt_debug,
+                num_avg_timing_iters=4,
                 workspace_size=trt_workspace_size,
                 min_block_size=1,
                 max_aux_streams=trt_max_aux_streams,
