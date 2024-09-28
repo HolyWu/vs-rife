@@ -188,6 +188,20 @@ def rife(
     stream = [torch.cuda.Stream(device) for _ in range(num_streams)]
     stream_lock = [Lock() for _ in range(num_streams)]
 
+    w = clip.width
+    h = clip.height
+    modulo = 64 if model in ["4.25", "4.26"] else 32
+    tmp = max(modulo, int(modulo / scale))
+    pw = math.ceil(w / tmp) * tmp
+    ph = math.ceil(h / tmp) * tmp
+    padding = (0, pw - w, 0, ph - h)
+
+    tenFlow_div = torch.tensor([(pw - 1.0) / 2.0, (ph - 1.0) / 2.0], dtype=dtype, device=device)
+
+    tenHorizontal = torch.linspace(-1.0, 1.0, pw, dtype=dtype, device=device).view(1, 1, 1, pw).expand(-1, -1, ph, -1)
+    tenVertical = torch.linspace(-1.0, 1.0, ph, dtype=dtype, device=device).view(1, 1, ph, 1).expand(-1, -1, -1, pw)
+    backwarp_tenGrid = torch.cat([tenHorizontal, tenVertical], 1)
+
     match model:
         case "4.0":
             from .IFNet_HDv3_v4_0 import IFNet
@@ -262,7 +276,7 @@ def rife(
     state_dict = {k.replace("module.", ""): v for k, v in state_dict.items() if "module." in k}
 
     with torch.device("meta"):
-        flownet = IFNet(scale, ensemble)
+        flownet = IFNet(tenFlow_div, backwarp_tenGrid, scale, ensemble)
     flownet.load_state_dict(state_dict, strict=False, assign=True)
     flownet.eval().to(device)
     if fp16:
@@ -271,20 +285,6 @@ def rife(
     if fps_num is not None and fps_den is not None:
         factor = Fraction(fps_num, fps_den) / clip.fps
         factor_num, factor_den = factor.as_integer_ratio()
-
-    w = clip.width
-    h = clip.height
-    modulo = 64 if model in ["4.25", "4.26"] else 32
-    tmp = max(modulo, int(modulo / scale))
-    pw = math.ceil(w / tmp) * tmp
-    ph = math.ceil(h / tmp) * tmp
-    padding = (0, pw - w, 0, ph - h)
-
-    tenFlow_div = torch.tensor([(pw - 1.0) / 2.0, (ph - 1.0) / 2.0], dtype=dtype, device=device)
-
-    tenHorizontal = torch.linspace(-1.0, 1.0, pw, dtype=dtype, device=device).view(1, 1, 1, pw).expand(-1, -1, ph, -1)
-    tenVertical = torch.linspace(-1.0, 1.0, ph, dtype=dtype, device=device).view(1, 1, ph, 1).expand(-1, -1, -1, pw)
-    backwarp_tenGrid = torch.cat([tenHorizontal, tenVertical], 1)
 
     if sc_threshold is not None:
         clip = sc_detect(clip, sc_threshold)
@@ -329,39 +329,15 @@ def rife(
                 torch.zeros([1, 3, ph, pw], dtype=dtype, device=device),
                 torch.zeros([1, 3, ph, pw], dtype=dtype, device=device),
                 torch.zeros([1, 1, ph, pw], dtype=dtype, device=device),
-                torch.zeros([2], dtype=dtype, device=device),
-                torch.zeros([1, 2, ph, pw], dtype=dtype, device=device),
             )
 
             if trt_static_shape:
                 dynamic_shapes = None
 
                 inputs = [
-                    torch_tensorrt.Input(
-                        shape=[1, 3, ph, pw],
-                        dtype=dtype,
-                        name="img0",
-                    ),
-                    torch_tensorrt.Input(
-                        shape=[1, 3, ph, pw],
-                        dtype=dtype,
-                        name="img1",
-                    ),
-                    torch_tensorrt.Input(
-                        shape=[1, 1, ph, pw],
-                        dtype=dtype,
-                        name="timestep",
-                    ),
-                    torch_tensorrt.Input(
-                        shape=[2],
-                        dtype=dtype,
-                        name="tenFlow_div",
-                    ),
-                    torch_tensorrt.Input(
-                        shape=[1, 2, ph, pw],
-                        dtype=dtype,
-                        name="backwarp_tenGrid",
-                    ),
+                    torch_tensorrt.Input(shape=[1, 3, ph, pw], dtype=dtype),
+                    torch_tensorrt.Input(shape=[1, 3, ph, pw], dtype=dtype),
+                    torch_tensorrt.Input(shape=[1, 1, ph, pw], dtype=dtype),
                 ]
             else:
                 trt_min_shape.reverse()
@@ -376,8 +352,6 @@ def rife(
                     "img0": {2: dim_height, 3: dim_width},
                     "img1": {2: dim_height, 3: dim_width},
                     "timestep": {2: dim_height, 3: dim_width},
-                    "tenFlow_div": {},
-                    "backwarp_tenGrid": {2: dim_height, 3: dim_width},
                 }
 
                 inputs = [
@@ -401,18 +375,6 @@ def rife(
                         max_shape=[1, 1] + trt_max_shape,
                         dtype=dtype,
                         name="timestep",
-                    ),
-                    torch_tensorrt.Input(
-                        shape=[2],
-                        dtype=dtype,
-                        name="tenFlow_div",
-                    ),
-                    torch_tensorrt.Input(
-                        min_shape=[1, 2] + trt_min_shape,
-                        opt_shape=[1, 2] + trt_opt_shape,
-                        max_shape=[1, 2] + trt_max_shape,
-                        dtype=dtype,
-                        name="backwarp_tenGrid",
                     ),
                 ]
 
@@ -461,9 +423,9 @@ def rife(
             timestep = torch.full((1, 1, ph, pw), remainder / factor_num, dtype=dtype, device=device)
 
             if trt:
-                output = flownet[local_index](img0, img1, timestep, tenFlow_div, backwarp_tenGrid)
+                output = flownet[local_index](img0, img1, timestep)
             else:
-                output = flownet(img0, img1, timestep, tenFlow_div, backwarp_tenGrid)
+                output = flownet(img0, img1, timestep)
 
             return tensor_to_frame(output[:, :, :h, :w], f[0].copy())
 

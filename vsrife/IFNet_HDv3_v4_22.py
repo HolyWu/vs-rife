@@ -81,18 +81,20 @@ class IFBlock(nn.Module):
         return flow, mask, feat
 
 class IFNet(nn.Module):
-    def __init__(self, scale=1, ensemble=False):
+    def __init__(self, tenFlow_div, backwarp_tenGrid, scale=1, ensemble=False):
         super(IFNet, self).__init__()
         self.block0 = IFBlock(7+16, c=256)
         self.block1 = IFBlock(8+4+16+8, c=192)
         self.block2 = IFBlock(8+4+16+8, c=96)
         self.block3 = IFBlock(8+4+16+8, c=48)
         self.encode = Head()
+        self.tenFlow_div = tenFlow_div
+        self.backwarp_tenGrid = backwarp_tenGrid
         self.scale_list = [8/scale, 4/scale, 2/scale, 1/scale]
         if ensemble:
             raise ValueError("rife: ensemble is not supported in v4.22")
 
-    def forward(self, img0, img1, timestep, tenFlow_div, backwarp_tenGrid):
+    def forward(self, img0, img1, timestep):
         f0 = self.encode(img0)
         f1 = self.encode(img1)
         flow_list = []
@@ -107,15 +109,15 @@ class IFNet(nn.Module):
             if flow is None:
                 flow, mask, feat = block[i](torch.cat((img0, img1, f0, f1, timestep), 1), None, scale=self.scale_list[i])
             else:
-                wf0 = warp(f0, flow[:, :2], tenFlow_div, backwarp_tenGrid)
-                wf1 = warp(f1, flow[:, 2:4], tenFlow_div, backwarp_tenGrid)
+                wf0 = warp(f0, flow[:, :2], self.tenFlow_div, self.backwarp_tenGrid)
+                wf1 = warp(f1, flow[:, 2:4], self.tenFlow_div, self.backwarp_tenGrid)
                 fd, m0, feat = block[i](torch.cat((warped_img0, warped_img1, wf0, wf1, timestep, mask, feat), 1), flow, scale=self.scale_list[i])
                 mask = m0
                 flow = flow + fd
             mask_list.append(mask)
             flow_list.append(flow)
-            warped_img0 = warp(img0, flow[:, :2], tenFlow_div, backwarp_tenGrid)
-            warped_img1 = warp(img1, flow[:, 2:4], tenFlow_div, backwarp_tenGrid)
+            warped_img0 = warp(img0, flow[:, :2], self.tenFlow_div, self.backwarp_tenGrid)
+            warped_img1 = warp(img1, flow[:, 2:4], self.tenFlow_div, self.backwarp_tenGrid)
             merged.append((warped_img0, warped_img1))
         mask = torch.sigmoid(mask)
         return warped_img0 * mask + warped_img1 * (1 - mask)

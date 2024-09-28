@@ -59,16 +59,18 @@ class IFBlock(nn.Module):
         return flow, mask
 
 class IFNet(nn.Module):
-    def __init__(self, scale=1, ensemble=False):
+    def __init__(self, tenFlow_div, backwarp_tenGrid, scale=1, ensemble=False):
         super(IFNet, self).__init__()
         self.block0 = IFBlock(7, c=192)
         self.block1 = IFBlock(8+4, c=128)
         self.block2 = IFBlock(8+4, c=96)
         self.block3 = IFBlock(8+4, c=64)
+        self.tenFlow_div = tenFlow_div
+        self.backwarp_tenGrid = backwarp_tenGrid
         self.scale_list = [8/scale, 4/scale, 2/scale, 1/scale]
         self.ensemble = ensemble
 
-    def forward(self, img0, img1, timestep, tenFlow_div, backwarp_tenGrid):
+    def forward(self, img0, img1, timestep):
         flow_list = []
         merged = []
         mask_list = []
@@ -94,8 +96,8 @@ class IFNet(nn.Module):
                 mask = mask + m0
             mask_list.append(mask)
             flow_list.append(flow)
-            warped_img0 = warp(img0, flow[:, :2], tenFlow_div, backwarp_tenGrid)
-            warped_img1 = warp(img1, flow[:, 2:4], tenFlow_div, backwarp_tenGrid)
+            warped_img0 = warp(img0, flow[:, :2], self.tenFlow_div, self.backwarp_tenGrid)
+            warped_img1 = warp(img1, flow[:, 2:4], self.tenFlow_div, self.backwarp_tenGrid)
             merged.append((warped_img0, warped_img1))
         mask_list[3] = torch.sigmoid(mask_list[3])
         return merged[3][0] * mask_list[3] + merged[3][1] * (1 - mask_list[3])
