@@ -188,20 +188,6 @@ def rife(
     stream = [torch.cuda.Stream(device) for _ in range(num_streams)]
     stream_lock = [Lock() for _ in range(num_streams)]
 
-    w = clip.width
-    h = clip.height
-    modulo = 64 if model in ["4.25", "4.26"] else 32
-    tmp = max(modulo, int(modulo / scale))
-    pw = math.ceil(w / tmp) * tmp
-    ph = math.ceil(h / tmp) * tmp
-    padding = (0, pw - w, 0, ph - h)
-
-    tenFlow_div = torch.tensor([(pw - 1.0) / 2.0, (ph - 1.0) / 2.0], dtype=dtype, device=device)
-
-    tenHorizontal = torch.linspace(-1.0, 1.0, pw, dtype=dtype, device=device).view(1, 1, 1, pw).expand(-1, -1, ph, -1)
-    tenVertical = torch.linspace(-1.0, 1.0, ph, dtype=dtype, device=device).view(1, 1, ph, 1).expand(-1, -1, -1, pw)
-    backwarp_tenGrid = torch.cat([tenHorizontal, tenVertical], 1)
-
     match model:
         case "4.0":
             from .IFNet_HDv3_v4_0 import IFNet
@@ -272,19 +258,17 @@ def rife(
 
     model_name = f"flownet_v{model}.pkl"
 
-    state_dict = torch.load(os.path.join(model_dir, model_name), map_location=device, weights_only=True, mmap=True)
-    state_dict = {k.replace("module.", ""): v for k, v in state_dict.items() if "module." in k}
-
-    with torch.device("meta"):
-        flownet = IFNet(tenFlow_div, backwarp_tenGrid, scale, ensemble)
-    flownet.load_state_dict(state_dict, strict=False, assign=True)
-    flownet.eval().to(device)
-    if fp16:
-        flownet.half()
-
     if fps_num is not None and fps_den is not None:
         factor = Fraction(fps_num, fps_den) / clip.fps
         factor_num, factor_den = factor.as_integer_ratio()
+
+    w = clip.width
+    h = clip.height
+    modulo = 64 if model in ["4.25", "4.26"] else 32
+    tmp = max(modulo, int(modulo / scale))
+    pw = math.ceil(w / tmp) * tmp
+    ph = math.ceil(h / tmp) * tmp
+    padding = (0, pw - w, 0, ph - h)
 
     if sc_threshold is not None:
         clip = sc_detect(clip, sc_threshold)
@@ -325,6 +309,8 @@ def rife(
         )
 
         if not os.path.isfile(trt_engine_path):
+            flownet = init_module(pw, ph, dtype, device, model_name, IFNet, scale, ensemble, fp16)
+
             example_inputs = (
                 torch.zeros([1, 3, ph, pw], dtype=dtype, device=device),
                 torch.zeros([1, 3, ph, pw], dtype=dtype, device=device),
@@ -396,6 +382,8 @@ def rife(
             torch_tensorrt.save(flownet, trt_engine_path, output_format="torchscript", inputs=example_inputs)
 
         flownet = [torch.jit.load(trt_engine_path).eval() for _ in range(num_streams)]
+    else:
+        flownet = init_module(pw, ph, dtype, device, model_name, IFNet, scale, ensemble, fp16)
 
     warnings.filterwarnings("ignore", "The given NumPy array is not writable")
 
@@ -439,6 +427,35 @@ def rife(
         clip1 = clip1.std.SelectEvery(cycle=factor_den, offsets=0)
 
     return clip0.std.FrameEval(lambda n: clip0.std.ModifyFrame([clip0, clip1], inference), clip_src=[clip0, clip1])
+
+
+def init_module(
+    pw: int,
+    ph: int,
+    dtype: torch.dtype,
+    device: torch.device,
+    model_name: str,
+    IFNet: torch.nn.Module,
+    scale: float,
+    ensemble: bool,
+    fp16: bool,
+) -> torch.nn.Module:
+    tenFlow_div = torch.tensor([(pw - 1.0) / 2.0, (ph - 1.0) / 2.0], dtype=dtype, device=device)
+
+    tenHorizontal = torch.linspace(-1.0, 1.0, pw, dtype=dtype, device=device).view(1, 1, 1, pw).expand(-1, -1, ph, -1)
+    tenVertical = torch.linspace(-1.0, 1.0, ph, dtype=dtype, device=device).view(1, 1, ph, 1).expand(-1, -1, -1, pw)
+    backwarp_tenGrid = torch.cat([tenHorizontal, tenVertical], 1)
+
+    state_dict = torch.load(os.path.join(model_dir, model_name), map_location="cpu", weights_only=True, mmap=True)
+    state_dict = {k.replace("module.", ""): v for k, v in state_dict.items() if "module." in k}
+
+    with torch.device("meta"):
+        flownet = IFNet(tenFlow_div, backwarp_tenGrid, scale, ensemble)
+    flownet.load_state_dict(state_dict, strict=False, assign=True)
+    flownet.eval().to(device)
+    if fp16:
+        flownet.half()
+    return flownet
 
 
 def sc_detect(clip: vs.VideoNode, threshold: float) -> vs.VideoNode:
