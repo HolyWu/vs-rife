@@ -13,6 +13,7 @@ import vapoursynth as vs
 
 __version__ = "5.2.0"
 
+os.environ["CI_BUILD"] = "1"
 os.environ["CUDA_MODULE_LOADING"] = "LAZY"
 
 model_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "models")
