@@ -1,7 +1,11 @@
 import torch
 import torch.nn as nn
 
-from .interpolate import interpolate
+try:
+    from .interpolate import interpolate
+except ModuleNotFoundError:
+    from torch.nn.functional import interpolate
+
 from .warplayer import warp
 
 
