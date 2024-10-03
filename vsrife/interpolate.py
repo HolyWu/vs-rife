@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 import importlib
 import math
-from typing import Any, Dict, Optional, Sequence, Tuple, Union
+from typing import Any, Optional, Sequence, Union
 
 import numpy as np
 import tensorrt as trt
@@ -183,7 +185,7 @@ def upsample(
     return layer.get_output(0)
 
 
-def args_bounds_check(args: Tuple[Argument, ...], i: int, replacement: Optional[Any] = None) -> Any:
+def args_bounds_check(args: tuple[Argument, ...], i: int, replacement: Optional[Any] = None) -> Any:
     return args[i] if len(args) > i and args[i] is not None else replacement
 
 
@@ -198,8 +200,8 @@ def args_bounds_check(args: Tuple[Argument, ...], i: int, replacement: Optional[
 def ops_upsample_nearest(
     ctx: ConversionContext,
     target: Target,
-    args: Tuple[Argument, ...],
-    kwargs: Dict[str, Argument],
+    args: tuple[Argument, ...],
+    kwargs: dict[str, Argument],
     name: str,
 ) -> Union[TRTTensor, Sequence[TRTTensor]]:
     return upsample(
@@ -226,8 +228,8 @@ def ops_upsample_nearest(
 def ops_upsample_linear(
     ctx: ConversionContext,
     target: Target,
-    args: Tuple[Argument, ...],
-    kwargs: Dict[str, Argument],
+    args: tuple[Argument, ...],
+    kwargs: dict[str, Argument],
     name: str,
 ) -> Union[TRTTensor, Sequence[TRTTensor]]:
     return upsample(
@@ -252,8 +254,8 @@ def ops_upsample_linear(
 def ops_upsample_bicubic(
     ctx: ConversionContext,
     target: Target,
-    args: Tuple[Argument, ...],
-    kwargs: Dict[str, Argument],
+    args: tuple[Argument, ...],
+    kwargs: dict[str, Argument],
     name: str,
 ) -> Union[TRTTensor, Sequence[TRTTensor]]:
     return upsample(
@@ -269,7 +271,7 @@ def ops_upsample_bicubic(
     )
 
 
-def _is_integer(x) -> bool:
+def _is_integer(x: Any) -> bool:
     r"""Type check the input number is an integer.
 
     Will return True for int, SymInt, Numpy integers and Tensors with integer elements.
