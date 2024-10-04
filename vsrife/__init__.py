@@ -271,12 +271,25 @@ def rife(
     ph = math.ceil(h / tmp) * tmp
     padding = (0, pw - w, 0, ph - h)
 
+    tenFlow_div = torch.tensor([(pw - 1.0) / 2.0, (ph - 1.0) / 2.0], dtype=torch.float, device=device)
+
+    tenHorizontal = torch.linspace(-1.0, 1.0, pw, dtype=torch.float, device=device)
+    tenHorizontal = tenHorizontal.view(1, 1, 1, pw).expand(-1, -1, ph, -1)
+    tenVertical = torch.linspace(-1.0, 1.0, ph, dtype=torch.float, device=device)
+    tenVertical = tenVertical.view(1, 1, ph, 1).expand(-1, -1, -1, pw)
+    backwarp_tenGrid = torch.cat([tenHorizontal, tenVertical], 1)
+
     if sc_threshold is not None:
         clip = sc_detect(clip, sc_threshold)
 
     if trt:
         import tensorrt
         import torch_tensorrt
+
+        from .warplayer_custom import WarpPluginCreator
+
+        registry = tensorrt.get_plugin_registry()
+        registry.register_creator(WarpPluginCreator())
 
         if trt_static_shape:
             dimensions = f"{pw}x{ph}"
@@ -310,12 +323,14 @@ def rife(
         )
 
         if not os.path.isfile(trt_engine_path):
-            flownet = init_module(pw, ph, dtype, device, model_name, IFNet, scale, ensemble, fp16)
+            flownet = init_module(model_name, IFNet, scale, ensemble, device, fp16)
 
             example_inputs = (
                 torch.zeros([1, 3, ph, pw], dtype=dtype, device=device),
                 torch.zeros([1, 3, ph, pw], dtype=dtype, device=device),
                 torch.zeros([1, 1, ph, pw], dtype=dtype, device=device),
+                torch.zeros([2], dtype=torch.float, device=device),
+                torch.zeros([1, 2, ph, pw], dtype=torch.float, device=device),
             )
 
             if trt_static_shape:
@@ -325,6 +340,8 @@ def rife(
                     torch_tensorrt.Input(shape=[1, 3, ph, pw], dtype=dtype),
                     torch_tensorrt.Input(shape=[1, 3, ph, pw], dtype=dtype),
                     torch_tensorrt.Input(shape=[1, 1, ph, pw], dtype=dtype),
+                    torch_tensorrt.Input(shape=[2], dtype=torch.float),
+                    torch_tensorrt.Input(shape=[1, 2, ph, pw], dtype=torch.float),
                 ]
             else:
                 trt_min_shape.reverse()
@@ -339,6 +356,8 @@ def rife(
                     "img0": {2: dim_height, 3: dim_width},
                     "img1": {2: dim_height, 3: dim_width},
                     "timestep": {2: dim_height, 3: dim_width},
+                    "tenFlow_div": {},
+                    "backwarp_tenGrid": {2: dim_height, 3: dim_width},
                 }
 
                 inputs = [
@@ -363,6 +382,18 @@ def rife(
                         dtype=dtype,
                         name="timestep",
                     ),
+                    torch_tensorrt.Input(
+                        shape=[2],
+                        dtype=torch.float,
+                        name="tenFlow_div",
+                    ),
+                    torch_tensorrt.Input(
+                        min_shape=[1, 2] + trt_min_shape,
+                        opt_shape=[1, 2] + trt_opt_shape,
+                        max_shape=[1, 2] + trt_max_shape,
+                        dtype=torch.float,
+                        name="backwarp_tenGrid",
+                    ),
                 ]
 
             exported_program = torch.export.export(flownet, example_inputs, dynamic_shapes=dynamic_shapes)
@@ -384,7 +415,7 @@ def rife(
 
         flownet = [torch.jit.load(trt_engine_path).eval() for _ in range(num_streams)]
     else:
-        flownet = init_module(pw, ph, dtype, device, model_name, IFNet, scale, ensemble, fp16)
+        flownet = init_module(model_name, IFNet, scale, ensemble, device, fp16)
 
     warnings.filterwarnings("ignore", "The given NumPy array is not writable")
 
@@ -412,9 +443,9 @@ def rife(
             timestep = torch.full((1, 1, ph, pw), remainder / factor_num, dtype=dtype, device=device)
 
             if trt:
-                output = flownet[local_index](img0, img1, timestep)
+                output = flownet[local_index](img0, img1, timestep, tenFlow_div, backwarp_tenGrid)
             else:
-                output = flownet(img0, img1, timestep)
+                output = flownet(img0, img1, timestep, tenFlow_div, backwarp_tenGrid)
 
             return tensor_to_frame(output[:, :, :h, :w], f[0].copy())
 
@@ -431,27 +462,13 @@ def rife(
 
 
 def init_module(
-    pw: int,
-    ph: int,
-    dtype: torch.dtype,
-    device: torch.device,
-    model_name: str,
-    IFNet: torch.nn.Module,
-    scale: float,
-    ensemble: bool,
-    fp16: bool,
+    model_name: str, IFNet: torch.nn.Module, scale: float, ensemble: bool, device: torch.device, fp16: bool
 ) -> torch.nn.Module:
-    tenFlow_div = torch.tensor([(pw - 1.0) / 2.0, (ph - 1.0) / 2.0], dtype=dtype, device=device)
-
-    tenHorizontal = torch.linspace(-1.0, 1.0, pw, dtype=dtype, device=device).view(1, 1, 1, pw).expand(-1, -1, ph, -1)
-    tenVertical = torch.linspace(-1.0, 1.0, ph, dtype=dtype, device=device).view(1, 1, ph, 1).expand(-1, -1, -1, pw)
-    backwarp_tenGrid = torch.cat([tenHorizontal, tenVertical], 1)
-
     state_dict = torch.load(os.path.join(model_dir, model_name), map_location="cpu", weights_only=True, mmap=True)
     state_dict = {k.replace("module.", ""): v for k, v in state_dict.items() if "module." in k}
 
     with torch.device("meta"):
-        flownet = IFNet(tenFlow_div, backwarp_tenGrid, scale, ensemble)
+        flownet = IFNet(scale, ensemble)
     flownet.load_state_dict(state_dict, strict=False, assign=True)
     flownet.eval().to(device)
     if fp16:
