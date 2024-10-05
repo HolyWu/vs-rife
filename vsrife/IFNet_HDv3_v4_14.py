@@ -4,7 +4,7 @@ import torch.nn as nn
 try:
     from .interpolate import interpolate
     from .warplayer_custom import warp
-except ModuleNotFoundError:
+except ImportError:
     from torch.nn.functional import interpolate
 
     from .warplayer import warp
