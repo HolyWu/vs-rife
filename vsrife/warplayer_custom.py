@@ -95,7 +95,7 @@ class WarpPlugin(trt.IPluginV3, trt.IPluginV3OneCore, trt.IPluginV3OneBuild, trt
             cp.copyto(output_d, cp.reshape(cp.asarray(out), (-1,)))
 
     def get_fields_to_serialize(self) -> trt.PluginFieldCollection_:
-        return trt.PluginFieldCollection_(trt.PluginFieldCollection())
+        return trt.PluginFieldCollection()
 
     def on_shape_change(self, inp: list[trt.PluginTensorDesc], out: list[trt.PluginTensorDesc]) -> None:
         pass
