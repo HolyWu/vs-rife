@@ -11,7 +11,7 @@ import torch
 import torch.nn.functional as F
 import vapoursynth as vs
 
-__version__ = "5.3.0"
+__version__ = "5.3.1"
 
 os.environ["CI_BUILD"] = "1"
 os.environ["CUDA_MODULE_LOADING"] = "LAZY"
