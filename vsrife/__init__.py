@@ -323,7 +323,7 @@ def rife(
         )
 
         if not os.path.isfile(trt_engine_path):
-            flownet = init_module(model_name, IFNet, scale, ensemble, device, fp16)
+            flownet = init_module(model_name, IFNet, scale, ensemble, device, dtype)
 
             example_inputs = (
                 torch.zeros([1, 3, ph, pw], dtype=dtype, device=device),
@@ -415,7 +415,7 @@ def rife(
 
         flownet = [torch.jit.load(trt_engine_path).eval() for _ in range(num_streams)]
     else:
-        flownet = init_module(model_name, IFNet, scale, ensemble, device, fp16)
+        flownet = init_module(model_name, IFNet, scale, ensemble, device, dtype)
 
     warnings.filterwarnings("ignore", "The given NumPy array is not writable")
 
@@ -462,7 +462,7 @@ def rife(
 
 
 def init_module(
-    model_name: str, IFNet: torch.nn.Module, scale: float, ensemble: bool, device: torch.device, fp16: bool
+    model_name: str, IFNet: torch.nn.Module, scale: float, ensemble: bool, device: torch.device, dtype: torch.dtype
 ) -> torch.nn.Module:
     state_dict = torch.load(os.path.join(model_dir, model_name), map_location="cpu", weights_only=True, mmap=True)
     state_dict = {k.replace("module.", ""): v for k, v in state_dict.items() if "module." in k}
@@ -470,9 +470,7 @@ def init_module(
     with torch.device("meta"):
         flownet = IFNet(scale, ensemble)
     flownet.load_state_dict(state_dict, strict=False, assign=True)
-    flownet.eval().to(device)
-    if fp16:
-        flownet.half()
+    flownet.eval().to(device, dtype)
     return flownet
 
 
