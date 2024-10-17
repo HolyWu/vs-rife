@@ -186,8 +186,13 @@ def rife(
 
     device = torch.device("cuda", device_index)
 
-    stream = [torch.cuda.Stream(device) for _ in range(num_streams)]
-    stream_lock = [Lock() for _ in range(num_streams)]
+    inf_streams = [torch.cuda.Stream(device) for _ in range(num_streams)]
+    f2t_streams = [torch.cuda.Stream(device) for _ in range(num_streams)]
+    t2f_streams = [torch.cuda.Stream(device) for _ in range(num_streams)]
+
+    inf_stream_locks = [Lock() for _ in range(num_streams)]
+    f2t_stream_locks = [Lock() for _ in range(num_streams)]
+    t2f_stream_locks = [Lock() for _ in range(num_streams)]
 
     match model:
         case "4.0":
@@ -270,14 +275,6 @@ def rife(
     pw = math.ceil(w / tmp) * tmp
     ph = math.ceil(h / tmp) * tmp
     padding = (0, pw - w, 0, ph - h)
-
-    tenFlow_div = torch.tensor([(pw - 1.0) / 2.0, (ph - 1.0) / 2.0], dtype=torch.float, device=device)
-
-    tenHorizontal = torch.linspace(-1.0, 1.0, pw, dtype=torch.float, device=device)
-    tenHorizontal = tenHorizontal.view(1, 1, 1, pw).expand(-1, -1, ph, -1)
-    tenVertical = torch.linspace(-1.0, 1.0, ph, dtype=torch.float, device=device)
-    tenVertical = tenVertical.view(1, 1, ph, 1).expand(-1, -1, -1, pw)
-    backwarp_tenGrid = torch.cat([tenHorizontal, tenVertical], 1)
 
     if sc_threshold is not None:
         clip = sc_detect(clip, sc_threshold)
@@ -422,6 +419,16 @@ def rife(
     index = -1
     index_lock = Lock()
 
+    tenFlow_div = torch.tensor([(pw - 1.0) / 2.0, (ph - 1.0) / 2.0], dtype=torch.float, device=device)
+
+    tenHorizontal = torch.linspace(-1.0, 1.0, pw, dtype=torch.float, device=device)
+    tenHorizontal = tenHorizontal.view(1, 1, 1, pw).expand(-1, -1, ph, -1)
+    tenVertical = torch.linspace(-1.0, 1.0, ph, dtype=torch.float, device=device)
+    tenVertical = tenVertical.view(1, 1, ph, 1).expand(-1, -1, -1, pw)
+    backwarp_tenGrid = torch.cat([tenHorizontal, tenVertical], 1)
+
+    torch.cuda.current_stream(device).synchronize()
+
     @torch.inference_mode()
     def inference(n: int, f: list[vs.VideoFrame]) -> vs.VideoFrame:
         remainder = n * factor_den % factor_num
@@ -434,9 +441,13 @@ def rife(
             index = (index + 1) % num_streams
             local_index = index
 
-        with stream_lock[local_index], torch.cuda.stream(stream[local_index]):
+        with f2t_stream_locks[local_index], torch.cuda.stream(f2t_streams[local_index]):
             img0 = frame_to_tensor(f[0], device)
             img1 = frame_to_tensor(f[1], device)
+
+            f2t_streams[local_index].synchronize()
+
+        with inf_stream_locks[local_index], torch.cuda.stream(inf_streams[local_index]):
             img0 = F.pad(img0, padding)
             img1 = F.pad(img1, padding)
 
@@ -447,7 +458,10 @@ def rife(
             else:
                 output = flownet(img0, img1, timestep, tenFlow_div, backwarp_tenGrid)
 
-            return tensor_to_frame(output[:, :, :h, :w], f[0].copy())
+            inf_streams[local_index].synchronize()
+
+        with t2f_stream_locks[local_index], torch.cuda.stream(t2f_streams[local_index]):
+            return tensor_to_frame(output[:, :, :h, :w], f[0].copy(), t2f_streams[local_index])
 
     clip0 = vs.core.std.Interleave([clip] * factor_num)
     if factor_den > 1:
@@ -487,14 +501,23 @@ def sc_detect(clip: vs.VideoNode, threshold: float) -> vs.VideoNode:
 
 def frame_to_tensor(frame: vs.VideoFrame, device: torch.device) -> torch.Tensor:
     return (
-        torch.stack([torch.from_numpy(np.asarray(frame[plane])).to(device) for plane in range(frame.format.num_planes)])
+        torch.stack(
+            [
+                torch.from_numpy(np.asarray(frame[plane])).to(device, non_blocking=True)
+                for plane in range(frame.format.num_planes)
+            ]
+        )
         .unsqueeze(0)
         .clamp(0.0, 1.0)
     )
 
 
-def tensor_to_frame(tensor: torch.Tensor, frame: vs.VideoFrame) -> vs.VideoFrame:
-    array = tensor.squeeze(0).detach().cpu().numpy()
+def tensor_to_frame(tensor: torch.Tensor, frame: vs.VideoFrame, stream: torch.cuda.Stream) -> vs.VideoFrame:
+    tensor = tensor.squeeze(0).detach()
+    tensors = [tensor[plane].to("cpu", non_blocking=True) for plane in range(frame.format.num_planes)]
+
+    stream.synchronize()
+
     for plane in range(frame.format.num_planes):
-        np.copyto(np.asarray(frame[plane]), array[plane])
+        np.copyto(np.asarray(frame[plane]), tensors[plane].numpy())
     return frame
