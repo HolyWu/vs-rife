@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import os
+import sys
 import warnings
 from fractions import Fraction
 from threading import Lock
@@ -320,6 +321,9 @@ def rife(
         )
 
         if not os.path.isfile(trt_engine_path):
+            if sys.stdout is None:
+                sys.stdout = open(os.devnull, "w")
+
             flownet = init_module(model_name, IFNet, scale, ensemble, device, dtype)
 
             example_inputs = (
