@@ -52,6 +52,7 @@ models = [
     "4.23",
     "4.24",
     "4.25",
+    "4.25.lite",
     "4.26",
 ]
 
@@ -195,6 +196,8 @@ def rife(
     f2t_stream_locks = [Lock() for _ in range(num_streams)]
     t2f_stream_locks = [Lock() for _ in range(num_streams)]
 
+    modulo = 32
+
     match model:
         case "4.0":
             from .IFNet_HDv3_v4_0 import IFNet
@@ -260,8 +263,16 @@ def rife(
             from .IFNet_HDv3_v4_24 import IFNet
         case "4.25":
             from .IFNet_HDv3_v4_25 import IFNet
+
+            modulo = 64
+        case "4.25.lite":
+            from .IFNet_HDv3_v4_25_lite import IFNet
+
+            modulo = 128
         case "4.26":
             from .IFNet_HDv3_v4_26 import IFNet
+
+            modulo = 64
 
     model_name = f"flownet_v{model}.pkl"
 
@@ -271,7 +282,6 @@ def rife(
 
     w = clip.width
     h = clip.height
-    modulo = 64 if model in ["4.25", "4.26"] else 32
     tmp = max(modulo, int(modulo / scale))
     pw = math.ceil(w / tmp) * tmp
     ph = math.ceil(h / tmp) * tmp
