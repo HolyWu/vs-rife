@@ -188,14 +188,6 @@ def rife(
 
     device = torch.device("cuda", device_index)
 
-    inf_streams = [torch.cuda.Stream(device) for _ in range(num_streams)]
-    f2t_streams = [torch.cuda.Stream(device) for _ in range(num_streams)]
-    t2f_streams = [torch.cuda.Stream(device) for _ in range(num_streams)]
-
-    inf_stream_locks = [Lock() for _ in range(num_streams)]
-    f2t_stream_locks = [Lock() for _ in range(num_streams)]
-    t2f_stream_locks = [Lock() for _ in range(num_streams)]
-
     modulo = 32
 
     match model:
@@ -433,6 +425,18 @@ def rife(
     index = -1
     index_lock = Lock()
 
+    inf_streams = [torch.cuda.Stream(device) for _ in range(num_streams)]
+    f2t_streams = [torch.cuda.Stream(device) for _ in range(num_streams)]
+    t2f_streams = [torch.cuda.Stream(device) for _ in range(num_streams)]
+
+    inf_stream_locks = [Lock() for _ in range(num_streams)]
+    f2t_stream_locks = [Lock() for _ in range(num_streams)]
+    t2f_stream_locks = [Lock() for _ in range(num_streams)]
+
+    pinned_tensors = [
+        torch.empty([2, 3, clip.height, clip.width], dtype=dtype, pin_memory=True) for _ in range(num_streams)
+    ]
+
     tenFlow_div = torch.tensor([(pw - 1.0) / 2.0, (ph - 1.0) / 2.0], dtype=torch.float, device=device)
 
     tenHorizontal = torch.linspace(-1.0, 1.0, pw, dtype=torch.float, device=device)
@@ -456,17 +460,16 @@ def rife(
             local_index = index
 
         with f2t_stream_locks[local_index], torch.cuda.stream(f2t_streams[local_index]):
-            img0 = frame_to_tensor(f[0], device)
-            img1 = frame_to_tensor(f[1], device)
-
-            f2t_streams[local_index].synchronize()
-
-        with inf_stream_locks[local_index], torch.cuda.stream(inf_streams[local_index]):
+            img0 = frame_to_tensor(f[0], pinned_tensors[local_index][0], device)
+            img1 = frame_to_tensor(f[1], pinned_tensors[local_index][1], device)
             img0 = F.pad(img0, padding)
             img1 = F.pad(img1, padding)
 
             timestep = torch.full((1, 1, ph, pw), remainder / factor_num, dtype=dtype, device=device)
 
+            f2t_streams[local_index].synchronize()
+
+        with inf_stream_locks[local_index], torch.cuda.stream(inf_streams[local_index]):
             if trt:
                 output = flownet[local_index](img0, img1, timestep, tenFlow_div, backwarp_tenGrid)
             else:
@@ -513,11 +516,11 @@ def sc_detect(clip: vs.VideoNode, threshold: float) -> vs.VideoNode:
     return clip.std.FrameEval(lambda n: clip.std.ModifyFrame([clip, sc_clip], copy_property), clip_src=[clip, sc_clip])
 
 
-def frame_to_tensor(frame: vs.VideoFrame, device: torch.device) -> torch.Tensor:
+def frame_to_tensor(frame: vs.VideoFrame, pinned_tensor: torch.Tensor, device: torch.device) -> torch.Tensor:
     return (
         torch.stack(
             [
-                torch.from_numpy(np.asarray(frame[plane])).to(device, non_blocking=True)
+                pinned_tensor[plane].copy_(torch.from_numpy(np.asarray(frame[plane]))).to(device, non_blocking=True)
                 for plane in range(frame.format.num_planes)
             ]
         )
