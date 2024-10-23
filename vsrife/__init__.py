@@ -278,6 +278,7 @@ def rife(
     pw = math.ceil(w / tmp) * tmp
     ph = math.ceil(h / tmp) * tmp
     padding = (0, pw - w, 0, ph - h)
+    need_pad = any(p > 0 for p in padding)
 
     if sc_threshold is not None:
         clip = sc_detect(clip, sc_threshold)
@@ -462,8 +463,10 @@ def rife(
         with f2t_stream_locks[local_index], torch.cuda.stream(f2t_streams[local_index]):
             img0 = frame_to_tensor(f[0], pinned_tensors[local_index][0], device)
             img1 = frame_to_tensor(f[1], pinned_tensors[local_index][1], device)
-            img0 = F.pad(img0, padding)
-            img1 = F.pad(img1, padding)
+
+            if need_pad:
+                img0 = F.pad(img0, padding)
+                img1 = F.pad(img1, padding)
 
             timestep = torch.full((1, 1, ph, pw), remainder / factor_num, dtype=dtype, device=device)
 
@@ -478,7 +481,10 @@ def rife(
             inf_streams[local_index].synchronize()
 
         with t2f_stream_locks[local_index], torch.cuda.stream(t2f_streams[local_index]):
-            return tensor_to_frame(output[:, :, :h, :w], f[0].copy(), t2f_streams[local_index])
+            if need_pad:
+                output = output[:, :, :h, :w]
+
+            return tensor_to_frame(output, f[0].copy(), t2f_streams[local_index])
 
     clip0 = vs.core.std.Interleave([clip] * factor_num)
     if factor_den > 1:
