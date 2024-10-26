@@ -287,11 +287,6 @@ def rife(
         import tensorrt
         import torch_tensorrt
 
-        from .warplayer_custom import WarpPluginCreator
-
-        registry = tensorrt.get_plugin_registry()
-        registry.register_creator(WarpPluginCreator())
-
         if trt_static_shape:
             dimensions = f"{pw}x{ph}"
         else:

@@ -1,13 +1,8 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
-try:
-    from .interpolate import interpolate
-    from .warplayer_custom import warp
-except ImportError:
-    from torch.nn.functional import interpolate
-
-    from .warplayer import warp
+from .warplayer import warp
 
 
 def conv(in_planes, out_planes, kernel_size=3, stride=1, padding=1, dilation=1):
@@ -72,14 +67,14 @@ class IFBlock(nn.Module):
         )
 
     def forward(self, x, flow=None, scale=1):
-        x = interpolate(x, scale_factor= 1. / scale, mode="bilinear")
+        x = F.interpolate(x, scale_factor= 1. / scale, mode="bilinear")
         if flow is not None:
-            flow = interpolate(flow, scale_factor= 1. / scale, mode="bilinear") / scale
+            flow = F.interpolate(flow, scale_factor= 1. / scale, mode="bilinear") / scale
             x = torch.cat((x, flow), 1)
         feat = self.conv0(x)
         feat = self.convblock(feat)
         tmp = self.lastconv(feat)
-        tmp = interpolate(tmp, scale_factor=scale, mode="bilinear")
+        tmp = F.interpolate(tmp, scale_factor=scale, mode="bilinear")
         flow = tmp[:, :4] * scale
         mask = tmp[:, 4:5]
         return flow, mask
