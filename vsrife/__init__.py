@@ -11,6 +11,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import vapoursynth as vs
+from torch._decomp import get_decompositions
 
 __version__ = "5.3.1"
 
@@ -396,18 +397,19 @@ def rife(
                 ]
 
             exported_program = torch.export.export(flownet, example_inputs, dynamic_shapes=dynamic_shapes)
+            exported_program = exported_program.run_decompositions(get_decompositions([torch.ops.aten.grid_sampler_2d]))
 
             flownet = torch_tensorrt.dynamo.compile(
                 exported_program,
                 inputs,
                 device=device,
-                enabled_precisions={dtype},
                 debug=trt_debug,
                 num_avg_timing_iters=4,
                 workspace_size=trt_workspace_size,
                 min_block_size=1,
                 max_aux_streams=trt_max_aux_streams,
                 optimization_level=trt_optimization_level,
+                use_explicit_typing=True,
             )
 
             torch_tensorrt.save(flownet, trt_engine_path, output_format="torchscript", inputs=example_inputs)
