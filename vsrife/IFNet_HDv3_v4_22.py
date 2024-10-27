@@ -22,6 +22,7 @@ class Head(nn.Module):
         self.relu = nn.LeakyReLU(0.2, True)
 
     def forward(self, x, feat=False):
+        x = x.clamp(0.0, 1.0)
         x0 = self.cnn0(x)
         x = self.relu(x0)
         x1 = self.cnn1(x)
@@ -92,9 +93,9 @@ class IFNet(nn.Module):
         if ensemble:
             raise ValueError("rife: ensemble is not supported in v4.22")
 
-    def forward(self, img0, img1, timestep, tenFlow_div, backwarp_tenGrid):
-        f0 = self.encode(img0)
-        f1 = self.encode(img1)
+    def forward(self, img0, img1, timestep, tenFlow_div, backwarp_tenGrid, f0, f1):
+        img0 = img0.clamp(0.0, 1.0)
+        img1 = img1.clamp(0.0, 1.0)
         flow_list = []
         merged = []
         mask_list = []

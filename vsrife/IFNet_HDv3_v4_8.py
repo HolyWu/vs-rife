@@ -72,9 +72,9 @@ class IFNet(nn.Module):
         self.scale_list = [8/scale, 4/scale, 2/scale, 1/scale]
         self.ensemble = ensemble
 
-    def forward(self, img0, img1, timestep, tenFlow_div, backwarp_tenGrid):
-        f0 = self.encode(img0)
-        f1 = self.encode(img1)
+    def forward(self, img0, img1, timestep, tenFlow_div, backwarp_tenGrid, f0, f1):
+        img0 = img0.clamp(0.0, 1.0)
+        img1 = img1.clamp(0.0, 1.0)
         flow_list = []
         merged = []
         mask_list = []
