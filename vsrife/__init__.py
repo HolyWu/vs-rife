@@ -435,6 +435,11 @@ def rife(
         torch.empty([2, 3, clip.height, clip.width], dtype=dtype, pin_memory=True) for _ in range(num_streams)
     ]
 
+    timestep = {}
+    for i in range(1, factor_num):
+        t = i * factor_den % factor_num / factor_num
+        timestep[t] = torch.full([1, 1, ph, pw], t, dtype=dtype, device=device)
+
     tenFlow_div = torch.tensor([(pw - 1.0) / 2.0, (ph - 1.0) / 2.0], dtype=torch.float, device=device)
 
     tenHorizontal = torch.linspace(-1.0, 1.0, pw, dtype=torch.float, device=device)
@@ -447,9 +452,9 @@ def rife(
 
     @torch.inference_mode()
     def inference(n: int, f: list[vs.VideoFrame]) -> vs.VideoFrame:
-        remainder = n * factor_den % factor_num
+        t = n * factor_den % factor_num / factor_num
 
-        if remainder == 0 or (sc and f[0].props.get("_SceneChangeNext")):
+        if t == 0 or (sc and f[0].props.get("_SceneChangeNext")):
             return f[0]
 
         nonlocal index
@@ -465,15 +470,13 @@ def rife(
                 img0 = F.pad(img0, padding)
                 img1 = F.pad(img1, padding)
 
-            timestep = torch.full((1, 1, ph, pw), remainder / factor_num, dtype=dtype, device=device)
-
             f2t_streams[local_index].synchronize()
 
         with inf_stream_locks[local_index], torch.cuda.stream(inf_streams[local_index]):
             if trt:
-                output = flownet[local_index](img0, img1, timestep, tenFlow_div, backwarp_tenGrid)
+                output = flownet[local_index](img0, img1, timestep[t], tenFlow_div, backwarp_tenGrid)
             else:
-                output = flownet(img0, img1, timestep, tenFlow_div, backwarp_tenGrid)
+                output = flownet(img0, img1, timestep[t], tenFlow_div, backwarp_tenGrid)
 
             inf_streams[local_index].synchronize()
 
