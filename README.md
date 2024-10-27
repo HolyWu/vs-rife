@@ -8,13 +8,14 @@ Real-Time Intermediate Flow Estimation for Video Frame Interpolation, based on h
 - [vs-miscfilters-obsolete](https://github.com/vapoursynth/vs-miscfilters-obsolete) (only needed for scene change detection)
 
 `trt` requires additional packages:
-- [CuPy](https://cupy.dev/) for CUDA 12.x
+- [TensorRT](https://developer.nvidia.com/tensorrt) 10.4.0 or later
 - [Torch-TensorRT](https://pytorch.org/TensorRT/) 2.6.0.dev
 
 To install the latest nightly build of PyTorch and Torch-TensorRT, run:
 ```
 pip install -U packaging setuptools wheel
 pip install --pre -U torch torchvision torch_tensorrt --index-url https://download.pytorch.org/whl/nightly/cu124 --extra-index-url https://pypi.nvidia.com
+pip install -U tensorrt-cu12 tensorrt-cu12_bindings tensorrt-cu12_libs --extra-index-url https://pypi.nvidia.com
 ```
 
 
