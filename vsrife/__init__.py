@@ -14,7 +14,7 @@ import torch.nn.functional as F
 import vapoursynth as vs
 from torch._decomp import get_decompositions
 
-__version__ = "5.3.1"
+__version__ = "5.4.0"
 
 os.environ["CI_BUILD"] = "1"
 os.environ["CUDA_MODULE_LOADING"] = "LAZY"
