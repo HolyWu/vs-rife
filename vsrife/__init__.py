@@ -18,6 +18,9 @@ __version__ = "5.3.1"
 os.environ["CI_BUILD"] = "1"
 os.environ["CUDA_MODULE_LOADING"] = "LAZY"
 
+warnings.filterwarnings("ignore", "Both operands of the binary elementwise op")
+warnings.filterwarnings("ignore", "The given NumPy array is not writable")
+
 model_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "models")
 
 models = [
@@ -418,8 +421,6 @@ def rife(
     else:
         flownet = init_module(model_name, IFNet, scale, ensemble, device, dtype)
 
-    warnings.filterwarnings("ignore", "The given NumPy array is not writable")
-
     index = -1
     index_lock = Lock()
 
@@ -487,13 +488,11 @@ def rife(
             return tensor_to_frame(output, f[0].copy(), t2f_streams[local_index])
 
     clip0 = vs.core.std.Interleave([clip] * factor_num)
-    if factor_den > 1:
-        clip0 = clip0.std.SelectEvery(cycle=factor_den, offsets=0)
-
-    clip1 = clip.std.DuplicateFrames(frames=clip.num_frames - 1).std.Trim(first=1)
+    clip1 = clip.std.DuplicateFrames(clip.num_frames - 1)[1:]
     clip1 = vs.core.std.Interleave([clip1] * factor_num)
     if factor_den > 1:
-        clip1 = clip1.std.SelectEvery(cycle=factor_den, offsets=0)
+        clip0 = clip0[::factor_den]
+        clip1 = clip1[::factor_den]
 
     return clip0.std.FrameEval(lambda n: clip0.std.ModifyFrame([clip0, clip1], inference), clip_src=[clip0, clip1])
 
