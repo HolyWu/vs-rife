@@ -710,11 +710,6 @@ def rife(
 
     @torch.inference_mode()
     def inference(n: int, f: list[vs.VideoFrame]) -> vs.VideoFrame:
-        t = n * factor_den % factor_num / factor_num
-
-        if t == 0 or (sc and f[0].props.get("_SceneChangeNext")):
-            return f[0]
-
         with inf_f2t_stream_lock, torch.cuda.stream(inf_f2t_stream):
             if Head is not None:
                 real_n = n * factor_den // factor_num
@@ -729,6 +724,12 @@ def rife(
                     if cache_to_delete in encode_cache:
                         del encode_cache[cache_to_delete]
 
+            t = n * factor_den % factor_num / factor_num
+
+            if t == 0 or (sc and f[0].props.get("_SceneChangeNext")):
+                return f[0]
+
+            if Head is not None:
                 if real_n in frame_cache:
                     img0 = frame_cache[real_n]
                 else:
