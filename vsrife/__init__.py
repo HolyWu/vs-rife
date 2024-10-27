@@ -157,6 +157,8 @@ def rife(
         raise vs.Error("rife: scale must be 0.25, 0.5, 1.0, 2.0, or 4.0")
 
     if not trt_static_shape:
+        raise vs.Error("rife: dynamic shapes is not allowed at the moment due to issues in Torch-TensorRT")
+
         if not isinstance(trt_min_shape, list) or len(trt_min_shape) != 2:
             raise vs.Error("rife: trt_min_shape must be a list with 2 items")
 
