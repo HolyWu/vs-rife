@@ -297,6 +297,8 @@ def rife(
             encode_channel = 4
         case "4.13":
             from .IFNet_HDv3_v4_13 import Head, IFNet
+
+            encode_channel = 8
         case "4.13.lite":
             from .IFNet_HDv3_v4_13_lite import IFNet
 
