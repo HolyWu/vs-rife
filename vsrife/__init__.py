@@ -73,7 +73,7 @@ def rife(
     fps_den: int | None = None,
     scale: float = 1.0,
     ensemble: bool = False,
-    sc: bool = True,
+    sc: bool = False,
     sc_threshold: float | None = None,
     trt: bool = False,
     trt_static_shape: bool = True,
