@@ -3,13 +3,13 @@ Real-Time Intermediate Flow Estimation for Video Frame Interpolation, based on h
 
 
 ## Dependencies
-- [PyTorch](https://pytorch.org/get-started/) 2.6.0.dev
+- [PyTorch](https://pytorch.org/get-started/) 2.6.0.dev20241023 or later
 - [VapourSynth](http://www.vapoursynth.com/) R66 or later
 - [vs-miscfilters-obsolete](https://github.com/vapoursynth/vs-miscfilters-obsolete) (only needed for scene change detection)
 
 `trt` requires additional packages:
 - [TensorRT](https://developer.nvidia.com/tensorrt) 10.4.0 or later
-- [Torch-TensorRT](https://pytorch.org/TensorRT/) 2.6.0.dev
+- [Torch-TensorRT](https://pytorch.org/TensorRT/) 2.6.0.dev20241023 or later
 
 To install the latest nightly build of PyTorch and Torch-TensorRT, run:
 ```
