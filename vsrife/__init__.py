@@ -662,8 +662,6 @@ def rife(
     inf_f2t_stream_lock = Lock()
     inf_t2f_stream_lock = Lock()
 
-    pinned_tensor = torch.empty([2, 3, clip.height, clip.width], dtype=dtype, pin_memory=True)
-
     if Head is not None:
         enc_stream = torch.cuda.Stream(device)
         enc_f2t_stream = torch.cuda.Stream(device)
@@ -692,7 +690,7 @@ def rife(
     @torch.inference_mode()
     def encoding(n: int, f: vs.VideoFrame) -> vs.VideoFrame:
         with enc_f2t_stream_lock, torch.cuda.stream(enc_f2t_stream):
-            img = frame_to_tensor(f, pinned_tensor[0], device)
+            img = frame_to_tensor(f, device)
 
             if need_pad:
                 img = F.pad(img, padding)
@@ -735,7 +733,7 @@ def rife(
                 if real_n in frame_cache:
                     img0 = frame_cache[real_n]
                 else:
-                    img0 = frame_to_tensor(f[0], pinned_tensor[0], device)
+                    img0 = frame_to_tensor(f[0], device)
 
                     if need_pad:
                         img0 = F.pad(img0, padding)
@@ -743,7 +741,7 @@ def rife(
                 if real_n_next in frame_cache:
                     img1 = frame_cache[real_n_next]
                 else:
-                    img1 = frame_to_tensor(f[1], pinned_tensor[1], device)
+                    img1 = frame_to_tensor(f[1], device)
 
                     if need_pad:
                         img1 = F.pad(img1, padding)
@@ -758,8 +756,8 @@ def rife(
                 else:
                     f1 = encode(img1)
             else:
-                img0 = frame_to_tensor(f[0], pinned_tensor[0], device)
-                img1 = frame_to_tensor(f[1], pinned_tensor[1], device)
+                img0 = frame_to_tensor(f[0], device)
+                img1 = frame_to_tensor(f[1], device)
 
                 if need_pad:
                     img0 = F.pad(img0, padding)
@@ -840,10 +838,10 @@ def sc_detect(clip: vs.VideoNode, threshold: float) -> vs.VideoNode:
     return clip.std.FrameEval(lambda n: clip.std.ModifyFrame([clip, sc_clip], copy_property), clip_src=[clip, sc_clip])
 
 
-def frame_to_tensor(frame: vs.VideoFrame, pinned_tensor: torch.Tensor, device: torch.device) -> torch.Tensor:
+def frame_to_tensor(frame: vs.VideoFrame, device: torch.device) -> torch.Tensor:
     return torch.stack(
         [
-            pinned_tensor[plane].copy_(torch.from_numpy(np.asarray(frame[plane]))).to(device, non_blocking=True)
+            torch.from_numpy(np.asarray(frame[plane])).to(device, non_blocking=True)
             for plane in range(frame.format.num_planes)
         ]
     ).unsqueeze(0)
