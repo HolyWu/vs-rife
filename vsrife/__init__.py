@@ -58,6 +58,7 @@ models = [
     "4.24",
     "4.25",
     "4.25.lite",
+    "4.25.heavy",
     "4.26",
 ]
 
@@ -383,6 +384,11 @@ def rife(
 
             encode_channel = 4
             modulo = 128
+        case "4.25.heavy":
+            from .IFNet_HDv3_v4_25_heavy import Head, IFNet
+
+            encode_channel = 4
+            modulo = 64
         case "4.26":
             from .IFNet_HDv3_v4_26 import Head, IFNet
 

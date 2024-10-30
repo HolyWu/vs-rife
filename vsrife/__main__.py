@@ -57,6 +57,7 @@ if __name__ == "__main__":
         "flownet_v4.24",
         "flownet_v4.25",
         "flownet_v4.25.lite",
+        "flownet_v4.25.heavy",
         "flownet_v4.26",
     ]
     for model in models:
