@@ -60,6 +60,7 @@ models = [
     "4.25.lite",
     "4.25.heavy",
     "4.26",
+    "4.26.large",
 ]
 
 
@@ -393,6 +394,11 @@ def rife(
             from .IFNet_HDv3_v4_26 import Head, IFNet
 
             encode_channel = 4
+            modulo = 64
+        case "4.26.large":
+            from .IFNet_HDv3_v4_26_large import Head, IFNet
+
+            encode_channel = 16
             modulo = 64
 
     model_name = f"flownet_v{model}.pkl"
