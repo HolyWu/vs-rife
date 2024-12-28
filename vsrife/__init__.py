@@ -14,6 +14,8 @@ import torch.nn.functional as F
 import vapoursynth as vs
 from torch._decomp import get_decompositions
 
+from .__main__ import download_model
+
 __version__ = "5.4.1"
 
 os.environ["CI_BUILD"] = "1"
@@ -69,6 +71,7 @@ def rife(
     clip: vs.VideoNode,
     device_index: int = 0,
     model: str = "4.18",
+    auto_download: bool = False,
     factor_num: int = 2,
     factor_den: int = 1,
     fps_num: int | None = None,
@@ -94,6 +97,7 @@ def rife(
                                     RGBH performs inference in FP16 mode while RGBS performs inference in FP32 mode.
     :param device_index:            Device ordinal of the GPU.
     :param model:                   Model to use.
+    :param auto_download:           Automatically download the specified model if the file has not been downloaded.
     :param factor_num:              Numerator of factor for target frame rate.
     :param factor_den:              Denominator of factor for target frame rate.
                                     For example `factor_num=5, factor_den=2` will multiply the frame rate by 2.5.
@@ -182,8 +186,14 @@ def rife(
         if any(trt_min_shape[i] >= trt_max_shape[i] for i in range(2)):
             raise vs.Error("rife: trt_min_shape must be less than trt_max_shape")
 
-    if os.path.getsize(os.path.join(model_dir, "flownet_v4.0.pkl")) == 0:
-        raise vs.Error("rife: model files have not been downloaded. run 'python -m vsrife' first")
+    if os.path.getsize(os.path.join(model_dir, f"flownet_v{model}.pkl")) == 0:
+        if auto_download:
+            download_model(f"https://github.com/HolyWu/vs-rife/releases/download/model/flownet_v{model}.pkl")
+        else:
+            raise vs.Error(
+                "rife: model file has not been downloaded. run `python -m vsrife` to download all models, or set "
+                "`auto_download=True` to only download the specified model"
+            )
 
     torch.set_float32_matmul_precision("high")
 
