@@ -697,11 +697,6 @@ def rife(
         enc_stream_lock = Lock()
         enc_f2t_stream_lock = Lock()
 
-    timestep = {}
-    for i in range(1, factor_num):
-        t = i * factor_den % factor_num / factor_num
-        timestep[t] = torch.full([1, 1, ph, pw], t, dtype=dtype, device=device)
-
     tenFlow_div = torch.tensor([(pw - 1.0) / 2.0, (ph - 1.0) / 2.0], dtype=torch.float, device=device)
 
     tenHorizontal = torch.linspace(-1.0, 1.0, pw, dtype=torch.float, device=device)
@@ -791,13 +786,15 @@ def rife(
                     img0 = F.pad(img0, padding)
                     img1 = F.pad(img1, padding)
 
+            timestep = torch.full([1, 1, ph, pw], t, dtype=dtype, device=device)
+
             inf_f2t_stream.synchronize()
 
         with inf_stream_lock, torch.cuda.stream(inf_stream):
             if Head is not None:
-                output = flownet(img0, img1, timestep[t], tenFlow_div, backwarp_tenGrid, f0, f1)
+                output = flownet(img0, img1, timestep, tenFlow_div, backwarp_tenGrid, f0, f1)
             else:
-                output = flownet(img0, img1, timestep[t], tenFlow_div, backwarp_tenGrid)
+                output = flownet(img0, img1, timestep, tenFlow_div, backwarp_tenGrid)
 
             inf_stream.synchronize()
 
