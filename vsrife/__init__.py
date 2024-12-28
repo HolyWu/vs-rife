@@ -417,6 +417,12 @@ def rife(
         factor = Fraction(fps_num, fps_den) / clip.fps
         factor_num, factor_den = factor.as_integer_ratio()
 
+    if factor_num <= factor_den:
+        raise vs.Error(
+            "rife: target frame rate must be higher than source frame rate. consider using change_fps from "
+            "https://github.com/Jaded-Encoding-Thaumaturgy/vs-tools if you want to reduce the frame rate"
+        )
+
     w = clip.width
     h = clip.height
     tmp = max(modulo, int(modulo / scale))
