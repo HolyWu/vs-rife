@@ -79,7 +79,7 @@ def rife(
     scale: float = 1.0,
     ensemble: bool = False,
     sc: bool = False,
-    sc_threshold: float | None = None,
+    sc_threshold: float | None = 0.15,
     trt: bool = False,
     trt_static_shape: bool = True,
     trt_min_shape: list[int] = [128, 128],
@@ -431,7 +431,7 @@ def rife(
     padding = (0, pw - w, 0, ph - h)
     need_pad = any(p > 0 for p in padding)
 
-    if sc_threshold is not None:
+    if sc and sc_threshold is not None:
         clip = sc_detect(clip, sc_threshold)
 
     if trt:
@@ -853,14 +853,8 @@ def init_module(
 
 
 def sc_detect(clip: vs.VideoNode, threshold: float) -> vs.VideoNode:
-    def copy_property(n: int, f: list[vs.VideoFrame]) -> vs.VideoFrame:
-        fout = f[0].copy()
-        fout.props["_SceneChangePrev"] = f[1].props["_SceneChangePrev"]
-        fout.props["_SceneChangeNext"] = f[1].props["_SceneChangeNext"]
-        return fout
-
     sc_clip = clip.resize.Bicubic(format=vs.GRAY8, matrix_s="709").misc.SCDetect(threshold)
-    return clip.std.FrameEval(lambda n: clip.std.ModifyFrame([clip, sc_clip], copy_property), clip_src=[clip, sc_clip])
+    return clip.std.CopyFrameProps(sc_clip, ["_SceneChangePrev", "_SceneChangeNext"])
 
 
 def frame_to_tensor(frame: vs.VideoFrame, device: torch.device) -> torch.Tensor:
