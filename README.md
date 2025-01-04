@@ -25,8 +25,8 @@ pip install -U tensorrt-cu12 tensorrt-cu12_bindings tensorrt-cu12_libs --extra-i
 pip install -U vsrife
 ```
 
-If you want to download all models at once, run `python -m vsrife`.
-If you prefer to only download the model you specified at first run, set `auto_download=True` in `rife()`.
+If you want to download all models at once, run `python -m vsrife`. If you prefer to only download the model you
+specified at first run, set `auto_download=True` in `rife()`.
 
 
 ## Usage
