@@ -174,8 +174,6 @@ def rife(
         raise vs.Error("rife: scale must be 0.25, 0.5, 1.0, 2.0, or 4.0")
 
     if not trt_static_shape:
-        raise vs.Error("rife: dynamic shapes is not allowed at the moment due to issues in Torch-TensorRT")
-
         if not isinstance(trt_min_shape, list) or len(trt_min_shape) != 2:
             raise vs.Error("rife: trt_min_shape must be a list with 2 items")
 
@@ -498,39 +496,55 @@ def rife(
 
             flownet, encode = init_module(model_name, IFNet, scale, ensemble, device, dtype, Head)
 
-            if encode is not None:
-                flownet_example_inputs = (
-                    torch.zeros([1, 3, ph, pw], dtype=dtype, device=device),
-                    torch.zeros([1, 3, ph, pw], dtype=dtype, device=device),
-                    torch.zeros([1, 1, ph, pw], dtype=dtype, device=device),
-                    torch.zeros([2], dtype=torch.float, device=device),
-                    torch.zeros([1, 2, ph, pw], dtype=torch.float, device=device),
-                    torch.zeros([1, encode_channel, ph, pw], dtype=dtype, device=device),
-                    torch.zeros([1, encode_channel, ph, pw], dtype=dtype, device=device),
-                )
-
-                encode_example_inputs = (torch.zeros([1, 3, ph, pw], dtype=dtype, device=device),)
-            else:
-                flownet_example_inputs = (
-                    torch.zeros([1, 3, ph, pw], dtype=dtype, device=device),
-                    torch.zeros([1, 3, ph, pw], dtype=dtype, device=device),
-                    torch.zeros([1, 1, ph, pw], dtype=dtype, device=device),
-                    torch.zeros([2], dtype=torch.float, device=device),
-                    torch.zeros([1, 2, ph, pw], dtype=torch.float, device=device),
-                )
-
             if trt_static_shape:
+                if encode is not None:
+                    flownet_inputs = (
+                        torch.zeros([1, 3, ph, pw], dtype=dtype, device=device),
+                        torch.zeros([1, 3, ph, pw], dtype=dtype, device=device),
+                        torch.zeros([1, 1, ph, pw], dtype=dtype, device=device),
+                        torch.zeros([2], dtype=torch.float, device=device),
+                        torch.zeros([1, 2, ph, pw], dtype=torch.float, device=device),
+                        torch.zeros([1, encode_channel, ph, pw], dtype=dtype, device=device),
+                        torch.zeros([1, encode_channel, ph, pw], dtype=dtype, device=device),
+                    )
+
+                    encode_inputs = (torch.zeros([1, 3, ph, pw], dtype=dtype, device=device),)
+                else:
+                    flownet_inputs = (
+                        torch.zeros([1, 3, ph, pw], dtype=dtype, device=device),
+                        torch.zeros([1, 3, ph, pw], dtype=dtype, device=device),
+                        torch.zeros([1, 1, ph, pw], dtype=dtype, device=device),
+                        torch.zeros([2], dtype=torch.float, device=device),
+                        torch.zeros([1, 2, ph, pw], dtype=torch.float, device=device),
+                    )
+
                 flownet_dynamic_shapes = None
                 encode_dynamic_shapes = None
-
-                flownet_inputs = flownet_example_inputs
-
-                if encode is not None:
-                    encode_inputs = encode_example_inputs
             else:
                 trt_min_shape.reverse()
                 trt_opt_shape.reverse()
                 trt_max_shape.reverse()
+
+                if encode is not None:
+                    flownet_inputs = (
+                        torch.zeros([1, 3] + trt_opt_shape, dtype=dtype, device=device),
+                        torch.zeros([1, 3] + trt_opt_shape, dtype=dtype, device=device),
+                        torch.zeros([1, 1] + trt_opt_shape, dtype=dtype, device=device),
+                        torch.zeros([2], dtype=torch.float, device=device),
+                        torch.zeros([1, 2] + trt_opt_shape, dtype=torch.float, device=device),
+                        torch.zeros([1, encode_channel] + trt_opt_shape, dtype=dtype, device=device),
+                        torch.zeros([1, encode_channel] + trt_opt_shape, dtype=dtype, device=device),
+                    )
+
+                    encode_inputs = (torch.zeros([1, 3] + trt_opt_shape, dtype=dtype, device=device),)
+                else:
+                    flownet_inputs = (
+                        torch.zeros([1, 3] + trt_opt_shape, dtype=dtype, device=device),
+                        torch.zeros([1, 3] + trt_opt_shape, dtype=dtype, device=device),
+                        torch.zeros([1, 1] + trt_opt_shape, dtype=dtype, device=device),
+                        torch.zeros([2], dtype=torch.float, device=device),
+                        torch.zeros([1, 2] + trt_opt_shape, dtype=torch.float, device=device),
+                    )
 
                 _height = torch.export.Dim("height", min=trt_min_shape[0] // tmp, max=trt_max_shape[0] // tmp)
                 _width = torch.export.Dim("width", min=trt_min_shape[1] // tmp, max=trt_max_shape[1] // tmp)
@@ -549,65 +563,6 @@ def rife(
                     }
 
                     encode_dynamic_shapes = ({2: dim_height, 3: dim_width},)
-
-                    flownet_inputs = [
-                        torch_tensorrt.Input(
-                            min_shape=[1, 3] + trt_min_shape,
-                            opt_shape=[1, 3] + trt_opt_shape,
-                            max_shape=[1, 3] + trt_max_shape,
-                            dtype=dtype,
-                            name="img0",
-                        ),
-                        torch_tensorrt.Input(
-                            min_shape=[1, 3] + trt_min_shape,
-                            opt_shape=[1, 3] + trt_opt_shape,
-                            max_shape=[1, 3] + trt_max_shape,
-                            dtype=dtype,
-                            name="img1",
-                        ),
-                        torch_tensorrt.Input(
-                            min_shape=[1, 1] + trt_min_shape,
-                            opt_shape=[1, 1] + trt_opt_shape,
-                            max_shape=[1, 1] + trt_max_shape,
-                            dtype=dtype,
-                            name="timestep",
-                        ),
-                        torch_tensorrt.Input(
-                            shape=[2],
-                            dtype=torch.float,
-                            name="tenFlow_div",
-                        ),
-                        torch_tensorrt.Input(
-                            min_shape=[1, 2] + trt_min_shape,
-                            opt_shape=[1, 2] + trt_opt_shape,
-                            max_shape=[1, 2] + trt_max_shape,
-                            dtype=torch.float,
-                            name="backwarp_tenGrid",
-                        ),
-                        torch_tensorrt.Input(
-                            min_shape=[1, encode_channel] + trt_min_shape,
-                            opt_shape=[1, encode_channel] + trt_opt_shape,
-                            max_shape=[1, encode_channel] + trt_max_shape,
-                            dtype=dtype,
-                            name="f0",
-                        ),
-                        torch_tensorrt.Input(
-                            min_shape=[1, encode_channel] + trt_min_shape,
-                            opt_shape=[1, encode_channel] + trt_opt_shape,
-                            max_shape=[1, encode_channel] + trt_max_shape,
-                            dtype=dtype,
-                            name="f1",
-                        ),
-                    ]
-
-                    encode_inputs = [
-                        torch_tensorrt.Input(
-                            min_shape=[1, 3] + trt_min_shape,
-                            opt_shape=[1, 3] + trt_opt_shape,
-                            max_shape=[1, 3] + trt_max_shape,
-                            dtype=dtype,
-                        )
-                    ]
                 else:
                     flownet_dynamic_shapes = {
                         "img0": {2: dim_height, 3: dim_width},
@@ -617,45 +572,7 @@ def rife(
                         "backwarp_tenGrid": {2: dim_height, 3: dim_width},
                     }
 
-                    flownet_inputs = [
-                        torch_tensorrt.Input(
-                            min_shape=[1, 3] + trt_min_shape,
-                            opt_shape=[1, 3] + trt_opt_shape,
-                            max_shape=[1, 3] + trt_max_shape,
-                            dtype=dtype,
-                            name="img0",
-                        ),
-                        torch_tensorrt.Input(
-                            min_shape=[1, 3] + trt_min_shape,
-                            opt_shape=[1, 3] + trt_opt_shape,
-                            max_shape=[1, 3] + trt_max_shape,
-                            dtype=dtype,
-                            name="img1",
-                        ),
-                        torch_tensorrt.Input(
-                            min_shape=[1, 1] + trt_min_shape,
-                            opt_shape=[1, 1] + trt_opt_shape,
-                            max_shape=[1, 1] + trt_max_shape,
-                            dtype=dtype,
-                            name="timestep",
-                        ),
-                        torch_tensorrt.Input(
-                            shape=[2],
-                            dtype=torch.float,
-                            name="tenFlow_div",
-                        ),
-                        torch_tensorrt.Input(
-                            min_shape=[1, 2] + trt_min_shape,
-                            opt_shape=[1, 2] + trt_opt_shape,
-                            max_shape=[1, 2] + trt_max_shape,
-                            dtype=torch.float,
-                            name="backwarp_tenGrid",
-                        ),
-                    ]
-
-            flownet_program = torch.export.export(
-                flownet, flownet_example_inputs, dynamic_shapes=flownet_dynamic_shapes
-            )
+            flownet_program = torch.export.export(flownet, flownet_inputs, dynamic_shapes=flownet_dynamic_shapes)
 
             flownet = torch_tensorrt.dynamo.compile(
                 flownet_program,
@@ -670,14 +587,10 @@ def rife(
                 use_explicit_typing=True,
             )
 
-            torch_tensorrt.save(
-                flownet, flownet_engine_path, output_format="torchscript", inputs=flownet_example_inputs
-            )
+            torch_tensorrt.save(flownet, flownet_engine_path, output_format="torchscript", inputs=flownet_inputs)
 
             if encode is not None:
-                encode_program = torch.export.export(
-                    encode, encode_example_inputs, dynamic_shapes=encode_dynamic_shapes
-                )
+                encode_program = torch.export.export(encode, encode_inputs, dynamic_shapes=encode_dynamic_shapes)
 
                 encode = torch_tensorrt.dynamo.compile(
                     encode_program,
@@ -692,9 +605,7 @@ def rife(
                     optimization_level=trt_optimization_level,
                 )
 
-                torch_tensorrt.save(
-                    encode, encode_engine_path, output_format="torchscript", inputs=encode_example_inputs
-                )
+                torch_tensorrt.save(encode, encode_engine_path, output_format="torchscript", inputs=encode_inputs)
 
         flownet = torch.jit.load(flownet_engine_path).eval()
         if Head is not None:
@@ -777,7 +688,6 @@ def rife(
                     img0 = frame_cache[real_n]
                 else:
                     img0 = frame_to_tensor(f[0], device)
-
                     if need_pad:
                         img0 = F.pad(img0, padding)
 
@@ -785,7 +695,6 @@ def rife(
                     img1 = frame_cache[real_n_next]
                 else:
                     img1 = frame_to_tensor(f[1], device)
-
                     if need_pad:
                         img1 = F.pad(img1, padding)
 
@@ -801,7 +710,6 @@ def rife(
             else:
                 img0 = frame_to_tensor(f[0], device)
                 img1 = frame_to_tensor(f[1], device)
-
                 if need_pad:
                     img0 = F.pad(img0, padding)
                     img1 = F.pad(img1, padding)
