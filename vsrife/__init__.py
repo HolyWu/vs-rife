@@ -13,7 +13,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import vapoursynth as vs
-from torch._decomp import get_decompositions
 
 from .__main__ import download_model
 
@@ -485,6 +484,16 @@ def rife(
         encode_engine_path = flownet_engine_path + ".encode"
 
         if not os.path.isfile(flownet_engine_path) or (Head is not None and not os.path.isfile(encode_engine_path)):
+            from torch_tensorrt.dynamo.conversion.impl.grid import GridSamplerInterpolationMode
+
+            GridSamplerInterpolationMode.update(
+                {
+                    0: tensorrt.InterpolationMode.LINEAR,
+                    1: tensorrt.InterpolationMode.NEAREST,
+                    2: tensorrt.InterpolationMode.CUBIC,
+                }
+            )
+
             if sys.stdout is None:
                 sys.stdout = open(os.devnull, "w")
 
@@ -648,7 +657,6 @@ def rife(
             flownet_program = torch.export.export(
                 flownet, flownet_example_inputs, dynamic_shapes=flownet_dynamic_shapes
             )
-            flownet_program = flownet_program.run_decompositions(get_decompositions([torch.ops.aten.grid_sampler_2d]))
 
             flownet = torch_tensorrt.dynamo.compile(
                 flownet_program,
