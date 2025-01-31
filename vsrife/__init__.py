@@ -21,7 +21,6 @@ __version__ = "5.5.1"
 os.environ["CI_BUILD"] = "1"
 os.environ["CUDA_MODULE_LOADING"] = "LAZY"
 
-warnings.filterwarnings("ignore", "Both operands of the binary elementwise op")
 warnings.filterwarnings("ignore", "The given NumPy array is not writable")
 
 model_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "models")
