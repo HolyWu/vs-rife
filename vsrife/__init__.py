@@ -756,7 +756,7 @@ def init_module(
     dtype: torch.dtype,
     Head: nn.Module | nn.Sequential | None,
 ) -> tuple[nn.Module, nn.Module | None]:
-    state_dict = torch.load(os.path.join(model_dir, model_name), map_location="cpu", weights_only=True, mmap=True)
+    state_dict = torch.load(os.path.join(model_dir, model_name), map_location="cpu", mmap=True)
     state_dict = {k.replace("module.", ""): v for k, v in state_dict.items() if "module." in k}
 
     with torch.device("meta"):
