@@ -81,7 +81,7 @@ def redirect_stdout_to_stderr():
 def rife(
     clip: vs.VideoNode,
     device_index: int = 0,
-    model: str = "4.18",
+    model: str = "4.25",
     auto_download: bool = False,
     factor_num: int = 2,
     factor_den: int = 1,
