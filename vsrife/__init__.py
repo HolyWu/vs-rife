@@ -16,7 +16,7 @@ import vapoursynth as vs
 
 from .__main__ import download_model
 
-__version__ = "5.5.1"
+__version__ = "5.6.0"
 
 os.environ["CI_BUILD"] = "1"
 os.environ["CUDA_MODULE_LOADING"] = "LAZY"
