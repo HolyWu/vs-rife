@@ -14,9 +14,7 @@ Real-Time Intermediate Flow Estimation for Video Frame Interpolation, based on h
 To install the latest stable version of PyTorch and Torch-TensorRT, run:
 ```
 pip install -U packaging setuptools wheel
-pip install -U torch torchvision --index-url https://download.pytorch.org/whl/cu126
-pip install --no-deps -U torch_tensorrt --index-url https://download.pytorch.org/whl/cu126
-pip install -U tensorrt --extra-index-url https://pypi.nvidia.com
+pip install -U torch torchvision torch_tensorrt --index-url https://download.pytorch.org/whl/cu126 --extra-index-url https://pypi.nvidia.com
 ```
 
 
