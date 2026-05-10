@@ -767,8 +767,17 @@ def init_module(
 
 
 def sc_detect(clip: vs.VideoNode, threshold: float) -> vs.VideoNode:
-    sc_clip = clip.resize.Bicubic(format=vs.GRAY8, matrix_s="709").misc.SCDetect(threshold)
-    return clip.std.CopyFrameProps(sc_clip, ["_SceneChangePrev", "_SceneChangeNext"])
+    sc_clip = clip.resize.Bicubic(format=vs.GRAY8, matrix_s="709")
+
+    sc_next = sc_clip[1:] + sc_clip[-1]
+    sc_next = sc_next.std.PlaneStats(sc_clip)
+
+    def set_sc_props(n, f):
+        fout = f[0].copy()
+        fout.props['_SceneChangeNext'] = int(threshold < f[1].props.get('PlaneStatsDiff', 0.0))
+        return fout
+
+    return clip.std.ModifyFrame(clips=[clip, sc_next], selector=set_sc_props)
 
 
 def frame_to_tensor(frame: vs.VideoFrame, device: torch.device) -> torch.Tensor:
